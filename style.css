@@ -104,3 +104,6 @@ label.inline.sync-force input { width: auto; }
 table.runs { margin: 4px 0 8px; font-size: .85rem; }
 table.runs td { padding: 4px 8px 4px 0; }
 button:disabled { opacity: .55; cursor: default; }
+td.files { white-space: nowrap; }
+td.files button.file { font-size: .8rem; padding: 3px 8px; margin: 0 4px 4px 0; }
+td.note { min-width: 220px; }

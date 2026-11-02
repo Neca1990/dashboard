@@ -586,11 +586,32 @@ async function setStatus(id, value) {
     }
   }
 }
+// files live in the private repo, so they are fetched with the token and handed to the browser as a download
+function fileButton(path, label) {
+  const btn = el("button", { class: "ghost file", type: "button", text: label, title: path.split("/").pop() });
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const res = await api(path, { headers: { Accept: "application/vnd.github.raw+json" } });
+      const url = URL.createObjectURL(await res.blob());
+      const a = el("a", { href: url, download: path.split("/").pop() });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      recordsStatus(e.status === 404 ? "Fajl više ne postoji (prijava je možda arhivirana)." : "Preuzimanje nije uspelo.", "err");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return btn;
+}
 function renderRecords() {
   const archive = state.view === "archive";
   $("#records-title").textContent = archive ? "Arhiva" : "Prijave";
   $("#records-hint").textContent = archive
-    ? "Odbijene, preskočene i prijave bez odgovora. Promeni status da vratiš prijavu među aktivne."
+    ? "Odbijene, preskočene i prijave bez odgovora. Njihovi CV-i i pisma se brišu pri sledećoj sinhronizaciji. Promeni status da vratiš prijavu među aktivne."
     : "Status menjaš direktno u tabeli. Odbijene i završene prijave same prelaze u Arhivu.";
   const inView = state.records.filter((r) => isArchived(r) === archive);
   const filter = $("#status-filter");
@@ -609,10 +630,12 @@ function renderRecords() {
       el("td", { text: recordDate(r) }), el("td", { text: r.firma || "" }), el("td", {}, [title]),
       el("td", { text: r.izvor || "" }), el("td", { text: r.ocena ? `${r.ocena}/10` : "" }),
       el("td", {}, [statusSelect(r)]),
+      el("td", { class: "files" }, (r.cv_fajlovi || []).map((f, i) => fileButton(f, i ? "📄 career-ops" : "📄 CV"))),
+      el("td", { class: "files" }, r.pismo_fajl ? [fileButton(r.pismo_fajl, "✉️ Pismo")] : []),
       el("td", { class: "note", text: (r.napomena || "").split(" | ").join("\n") }),
     ]);
   }));
-  if (!rows.length) body.append(el("tr", {}, [el("td", { colspan: "7", class: "muted", text: "Nema zapisa." })]));
+  if (!rows.length) body.append(el("tr", {}, [el("td", { colspan: "9", class: "muted", text: "Nema zapisa." })]));
   document.querySelectorAll("#records th").forEach((th) => {
     th.classList.toggle("sorted", th.dataset.key === key);
     th.classList.toggle("asc", th.dataset.key === key && asc);
