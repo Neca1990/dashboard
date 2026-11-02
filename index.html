@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="login" class="login hidden">
+    <form id="login-form" class="card narrow">
+      <h1>🔒 Dashboard</h1>
+      <label>GitHub pristupni ključ
+        <input id="token" type="password" autocomplete="off" required placeholder="github_pat_…">
+      </label>
+      <label>Repozitorijum (vlasnik/ime)
+        <input id="repo" type="text" autocomplete="off" required placeholder="vlasnik/repozitorijum">
+      </label>
+      <button type="submit">Prijavi se</button>
+      <p id="login-error" class="error" role="alert"></p>
+      <p class="muted">Ključ se čuva samo u ovom browseru.</p>
+    </form>
+  </main>
+
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <strong>Dashboard</strong>
+      <nav>
+        <button class="tab active" data-tab="settings">Podešavanja</button>
+        <button class="tab" data-tab="records">Prijave</button>
+      </nav>
+      <button id="logout" class="ghost">Odjavi se</button>
+    </header>
+
+    <section id="tab-settings" class="tab-panel">
+      <div class="card">
+        <div class="row-between">
+          <h2>Pretrage</h2>
+          <button id="add-search" class="ghost">+ Dodaj pretragu</button>
+        </div>
+        <div id="searches"></div>
+      </div>
+
+      <div class="card">
+        <h2>Raspored</h2>
+        <div class="grid">
+          <label>Koliko često
+            <select id="interval"></select>
+          </label>
+          <label>Od <input id="active-from" type="time"></label>
+          <label>Do <input id="active-to" type="time"></label>
+          <label>Najviše poruka po krugu <input id="max-messages" type="number" min="1" max="30"></label>
+          <label>Najstariji oglas (dana) <input id="max-age" type="number" min="1" max="14"></label>
+        </div>
+        <p class="warning" id="interval-warning" role="status"></p>
+        <p class="muted" id="tz-note"></p>
+      </div>
+
+      <div class="card">
+        <h2>Izvori</h2>
+        <div id="sources" class="checks"></div>
+      </div>
+
+      <div class="savebar">
+        <span id="save-status" role="status"></span>
+        <button id="save">Sačuvaj</button>
+      </div>
+    </section>
+
+    <section id="tab-records" class="tab-panel hidden">
+      <div class="card">
+        <div class="row-between">
+          <h2>Prijave</h2>
+          <select id="status-filter"><option value="">Svi statusi</option></select>
+        </div>
+        <div class="table-wrap">
+          <table id="records">
+            <thead><tr>
+              <th data-key="date">Datum</th><th data-key="firma">Firma</th><th data-key="pozicija">Pozicija</th>
+              <th data-key="izvor">Izvor</th><th data-key="ocena">Ocena</th><th data-key="status">Status</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
