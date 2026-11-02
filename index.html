@@ -37,6 +37,18 @@
     <section id="tab-settings" class="tab-panel">
       <div class="card">
         <div class="row-between">
+          <h2>Sinhronizacija</h2>
+          <button id="sync-now">Sinhronizuj sada</button>
+        </div>
+        <label class="inline sync-force"><input type="checkbox" id="sync-force"> odmah potraži i nove oglase (inače samo ako je na redu po rasporedu)</label>
+        <p id="sync-status" role="status"></p>
+        <p class="muted" id="sync-last"></p>
+        <table class="runs"><tbody id="sync-runs"></tbody></table>
+        <p class="muted">Obradi klikove sa Telegrama, pošalje oglase iz reda i osveži tabelu. Rezervna opcija ako automatsko pokretanje zakaže.</p>
+      </div>
+
+      <div class="card">
+        <div class="row-between">
           <h2>Pretrage</h2>
           <button id="add-search" class="ghost">+ Dodaj pretragu</button>
         </div>

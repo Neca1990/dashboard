@@ -53,8 +53,8 @@ function textToB64(text) {
   bytes.forEach((b) => { bin += String.fromCharCode(b); });
   return btoa(bin);
 }
-async function api(path, options = {}) {
-  const res = await fetch(`https://api.github.com/repos/${load(STORE.repo)}/contents/${path}`, {
+async function gh(path, options = {}) {
+  const res = await fetch(`https://api.github.com/repos/${load(STORE.repo)}/${path}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${load(STORE.token)}`,
@@ -71,6 +71,7 @@ async function api(path, options = {}) {
   }
   return res;
 }
+const api = (path, options) => gh(`contents/${path}`, options);
 async function readJson(path) {
   const meta = await (await api(path)).json();
   if (meta.content) return { data: JSON.parse(b64ToText(meta.content)), sha: meta.sha };
@@ -91,6 +92,7 @@ async function start() {
     await loadProfile();
     renderSettings();
     loadRecords();
+    loadRuns();
   } catch (e) {
     showLogin(e.status === 401 ? "Ključ nije ispravan ili je istekao." :
       e.status === 404 ? "Repozitorijum nije pronađen ili ključ nema pristup." : "Greška pri učitavanju. Pokušaj ponovo.");
@@ -445,6 +447,79 @@ async function saveCompanies() {
     return false;
   }
 }
+
+// ---------- sync (runs the workflow on demand) ----------
+const WORKFLOW = "actions/workflows/run.yml";
+const RUN_STATE = { queued: "⏳ čeka", in_progress: "⏳ u toku", waiting: "⏳ čeka", pending: "⏳ čeka", requested: "⏳ čeka" };
+const RUN_RESULT = { success: "✅ uspešno", failure: "❌ greška", cancelled: "⏹ otkazano", skipped: "⏭ preskočeno" };
+const ACTIONS_HELP = "Ključ nema dozvolu za pokretanje. Na GitHub-u: Settings → Developer settings → Fine-grained tokens → " +
+  "tvoj ključ → Edit → Add permissions → Actions: Read and write → Update. Ključ ostaje isti.";
+function syncStatus(text, kind = "") {
+  const s = $("#sync-status");
+  s.textContent = text;
+  s.className = kind;
+}
+function when(iso) {
+  const d = new Date(iso);
+  const mins = Math.round((Date.now() - d) / 60000);
+  const ago = mins < 1 ? "upravo" : mins < 60 ? `pre ${mins} min` : mins < 1440 ? `pre ${Math.round(mins / 60)} h` : `pre ${Math.round(mins / 1440)} d`;
+  return `${d.toLocaleString("sr-Latn-RS", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} (${ago})`;
+}
+function runLabel(run) {
+  return run.status === "completed" ? (RUN_RESULT[run.conclusion] || run.conclusion) : (RUN_STATE[run.status] || run.status);
+}
+async function fetchRuns() {
+  return (await (await gh(`${WORKFLOW}/runs?per_page=6`)).json()).workflow_runs || [];
+}
+async function loadRuns() {
+  let runs;
+  try {
+    runs = await fetchRuns();
+  } catch (e) {
+    $("#sync-last").textContent = e.status === 403 || e.status === 404 ? ACTIONS_HELP : "Istorija pokretanja nije dostupna.";
+    return [];
+  }
+  const done = runs.find((r) => r.status === "completed" && r.conclusion === "success");
+  $("#sync-last").textContent = done ? `Poslednja uspešna sinhronizacija: ${when(done.updated_at)}` : "Još nema uspešne sinhronizacije.";
+  $("#sync-runs").replaceChildren(...runs.map((r) => el("tr", {}, [
+    el("td", { text: when(r.created_at) }),
+    el("td", { text: r.display_title === "dashboard" ? "ručno (ovde)" : "automatski" }),
+    el("td", { text: runLabel(r) }),
+  ])));
+  return runs;
+}
+$("#sync-now").addEventListener("click", async () => {
+  const btn = $("#sync-now");
+  btn.disabled = true;
+  const started = Date.now() - 10000;
+  syncStatus("Pokrećem…");
+  try {
+    await gh(`${WORKFLOW}/dispatches`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main", inputs: { force_search: $("#sync-force").checked ? "true" : "false", trigger: "dashboard" } }),
+    });
+  } catch (e) {
+    syncStatus(e.status === 403 || e.status === 404 ? ACTIONS_HELP : "Pokretanje nije uspelo. Pokušaj ponovo.", "err");
+    btn.disabled = false;
+    return;
+  }
+  // the run shows up a few seconds after the dispatch; follow it until it finishes (max ~6 min)
+  for (let i = 0; i < 45; i++) {
+    await new Promise((r) => setTimeout(r, 8000));
+    let runs;
+    try { runs = await loadRuns(); } catch (_) { continue; }
+    const run = runs.find((r) => r.display_title === "dashboard" && new Date(r.created_at) >= started);
+    if (!run) { syncStatus("Pokrećem… (GitHub priprema pokretanje)"); continue; }
+    if (run.status !== "completed") { syncStatus(`Sinhronizacija ${runLabel(run)}…`); continue; }
+    btn.disabled = false;
+    if (run.conclusion !== "success") return syncStatus(`Sinhronizacija nije uspela (${runLabel(run)}).`, "err");
+    await loadRecords();
+    return syncStatus("✅ Gotovo. Telegram i tabela prijava su ažurirani.", "ok");
+  }
+  btn.disabled = false;
+  syncStatus("Sinhronizacija traje duže nego obično – proveri malo kasnije.", "err");
+});
 
 // ---------- records table ----------
 async function loadRecords() {

@@ -58,7 +58,7 @@ select.status { font-size: .85rem; padding: 3px 8px; border: 1px solid transpare
 .status[data-group="interview"] { background: #ffe8d6; color: #b45309; }
 .status[data-group="offer"]     { background: #dcf5e3; color: #15803d; }
 .status[data-group="rejected"]  { background: #fde2e2; color: #b91c1c; }
-.status[data-group="closed"]    { background: var(--chip); color: var(--muted); }
+.status[data-group="closed"]    { background: #fce7ef; color: #9f1239; }
 @media (prefers-color-scheme: dark) {
   .status[data-group="wait"]      { background: #3a2f12; color: #fcd77f; }
   .status[data-group="todo"]      { background: #16284a; color: #93b8ff; }
@@ -67,6 +67,7 @@ select.status { font-size: .85rem; padding: 3px 8px; border: 1px solid transpare
   .status[data-group="interview"] { background: #3d2714; color: #ffbe85; }
   .status[data-group="offer"]     { background: #15331f; color: #7ee2a0; }
   .status[data-group="rejected"]  { background: #3d1a1a; color: #ff9b9b; }
+  .status[data-group="closed"]    { background: #3a1826; color: #f9a8c4; }
 }
 #records-status { margin: 0 0 8px; min-height: 0; }
 #records-status:empty { display: none; }
@@ -94,3 +95,12 @@ label.inline input { width: 80px; }
 .rule { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-direction: row; margin: 0; color: var(--text); padding: 6px 0; border-bottom: 1px solid var(--border); }
 .rule select { min-width: 150px; }
 td.note { max-width: 320px; font-size: .82rem; color: var(--muted); white-space: pre-line; }
+#sync-status { margin: 8px 0 0; }
+#sync-status:empty { display: none; }
+#sync-status.ok { color: var(--ok); }
+#sync-status.err { color: var(--error); }
+.sync-force { color: var(--text); font-size: .9rem; margin: 4px 0 0; }
+label.inline.sync-force input { width: auto; }
+table.runs { margin: 4px 0 8px; font-size: .85rem; }
+table.runs td { padding: 4px 8px 4px 0; }
+button:disabled { opacity: .55; cursor: default; }
