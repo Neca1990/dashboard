@@ -50,6 +50,28 @@ th.sorted::after { content: " ▾"; }
 th.sorted.asc::after { content: " ▴"; }
 td a { color: var(--accent); }
 .status { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--chip); white-space: nowrap; }
+select.status { font-size: .85rem; padding: 3px 8px; border: 1px solid transparent; font-weight: 600; cursor: pointer; }
+.status[data-group="wait"]      { background: #fff4d6; color: #7a5300; }
+.status[data-group="todo"]      { background: #e0ecff; color: #1d4ed8; }
+.status[data-group="sent"]      { background: #e5e7ff; color: #4338ca; }
+.status[data-group="review"]    { background: #f1e5ff; color: #7e22ce; }
+.status[data-group="interview"] { background: #ffe8d6; color: #b45309; }
+.status[data-group="offer"]     { background: #dcf5e3; color: #15803d; }
+.status[data-group="rejected"]  { background: #fde2e2; color: #b91c1c; }
+.status[data-group="closed"]    { background: var(--chip); color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+  .status[data-group="wait"]      { background: #3a2f12; color: #fcd77f; }
+  .status[data-group="todo"]      { background: #16284a; color: #93b8ff; }
+  .status[data-group="sent"]      { background: #24264d; color: #a5adff; }
+  .status[data-group="review"]    { background: #2f1d45; color: #d4b0ff; }
+  .status[data-group="interview"] { background: #3d2714; color: #ffbe85; }
+  .status[data-group="offer"]     { background: #15331f; color: #7ee2a0; }
+  .status[data-group="rejected"]  { background: #3d1a1a; color: #ff9b9b; }
+}
+#records-status { margin: 0 0 8px; min-height: 0; }
+#records-status:empty { display: none; }
+#records-status.ok { color: var(--ok); }
+#records-status.err { color: var(--error); }
 @media (max-width: 600px) {
   .topbar strong { display: none; }
   .topbar nav { margin-left: 0; }

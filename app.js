@@ -14,9 +14,19 @@ const INTERVALS = [1, 2, 3, 4, 6, 8, 12, 24];
 const STORE = { token: "dash.token", repo: "dash.repo" };
 
 const $ = (sel) => document.querySelector(sel);
-const state = { taxonomy: null, sources: null, config: null, sha: null, records: [], sort: { key: "date", asc: false },
+const state = { taxonomy: null, sources: null, config: null, sha: null, records: [], recordsSha: null, view: "records",
+  sort: { key: "date", asc: false },
   companies: null, companiesSha: null, companiesDirty: false,
   profile: null, profileSha: null, profileDirty: false, languages: null };
+// status → color group; groups in ARCHIVED move the record to the archive tab
+const STATUSES = [
+  ["Čeka odobrenje", "wait"], ["Odobreno – čeka CV", "todo"], ["Odobreno – CV spreman", "todo"], ["Poslato", "sent"],
+  ["Review", "review"], ["Test", "review"], ["HR intervju", "interview"], ["Tehnički intervju", "interview"],
+  ["Ponuda", "offer"], ["Odbijeno", "rejected"], ["Preskočeno", "closed"], ["Bez odgovora", "closed"],
+];
+const STATUS_GROUP = Object.fromEntries(STATUSES);
+const ARCHIVED = new Set(["rejected", "closed"]);
+const isArchived = (r) => ARCHIVED.has(STATUS_GROUP[r.status]);
 const RULES = [
   ["language", "Obavezan jezik koji ne znam"],
   ["residency", "Mora da živi u drugoj zemlji (npr. samo SAD, samo Ukrajina)"],
@@ -108,7 +118,15 @@ $("#logout").addEventListener("click", () => {
 // ---------- tabs ----------
 document.querySelectorAll(".tab").forEach((btn) => btn.addEventListener("click", () => {
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
-  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("hidden", p.id !== `tab-${btn.dataset.tab}`));
+  // the archive is the same table, filtered to finished records
+  const panel = btn.dataset.tab === "archive" ? "records" : btn.dataset.tab;
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("hidden", p.id !== `tab-${panel}`));
+  if (panel === "records") {
+    state.view = btn.dataset.tab;
+    $("#status-filter").value = "";
+    recordsStatus("");
+    renderRecords();
+  }
 }));
 
 // ---------- settings form ----------
@@ -431,23 +449,83 @@ async function saveCompanies() {
 // ---------- records table ----------
 async function loadRecords() {
   try {
-    state.records = (await readJson(PATHS.records)).data;
+    const res = await readJson(PATHS.records);
+    state.records = res.data; state.recordsSha = res.sha;
   } catch (_) {
     state.records = [];
   }
-  const filter = $("#status-filter");
-  const statuses = [...new Set(state.records.map((r) => r.status).filter(Boolean))].sort();
-  filter.replaceChildren(el("option", { value: "", text: "Svi statusi" }), ...statuses.map((s) => el("option", { value: s, text: s })));
   renderRecords();
 }
 function recordDate(r) {
   return (r.datum_prijave || r.created_at || "").slice(0, 10);
 }
+function recordsStatus(text, kind = "") {
+  const s = $("#records-status");
+  s.textContent = text;
+  s.className = kind;
+}
+function statusSelect(r) {
+  const names = STATUSES.map(([name]) => name);
+  if (r.status && !names.includes(r.status)) names.push(r.status);
+  const sel = el("select", { class: "status", "data-group": STATUS_GROUP[r.status] || "", "aria-label": "Status" },
+    names.map((n) => el("option", { value: n, text: n })));
+  sel.value = r.status || "";
+  sel.addEventListener("change", () => setStatus(r.id, sel.value));
+  return sel;
+}
+async function setStatus(id, value) {
+  const today = new Date().toISOString().slice(0, 10);
+  const apply = (records) => {
+    const r = records.find((x) => x.id === id);
+    if (r) { r.status = value; r.datum_poslednjeg_kontakta = today; }
+    return r;
+  };
+  apply(state.records);
+  renderRecords();
+  recordsStatus("Čuvam…");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await api(PATHS.records, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `Status izmenjen preko dashboard-a: ${value}`,
+          content: textToB64(JSON.stringify(state.records, null, 2) + "\n"),
+          sha: state.recordsSha,
+        }),
+      });
+      state.recordsSha = (await res.json()).content.sha;
+      const where = ARCHIVED.has(STATUS_GROUP[value]) ? " Prijava je premeštena u Arhivu." : "";
+      return recordsStatus(`✅ Sačuvano: ${value}.${where}`, "ok");
+    } catch (e) {
+      if (e.status !== 409 || attempt) {
+        recordsStatus(e.status === 403 || e.status === 404
+          ? "Ključ nema dozvolu za upis (potrebno: Contents – Read and write)." : "Čuvanje nije uspelo. Pokušaj ponovo.", "err");
+        return loadRecords();
+      }
+      // the bot saved meanwhile: take its version and re-apply this change
+      const fresh = await readJson(PATHS.records);
+      state.records = fresh.data; state.recordsSha = fresh.sha;
+      apply(state.records);
+      renderRecords();
+    }
+  }
+}
 function renderRecords() {
+  const archive = state.view === "archive";
+  $("#records-title").textContent = archive ? "Arhiva" : "Prijave";
+  $("#records-hint").textContent = archive
+    ? "Odbijene, preskočene i prijave bez odgovora. Promeni status da vratiš prijavu među aktivne."
+    : "Status menjaš direktno u tabeli. Odbijene i završene prijave same prelaze u Arhivu.";
+  const inView = state.records.filter((r) => isArchived(r) === archive);
+  const filter = $("#status-filter");
+  const wanted = filter.value;
+  const statuses = [...new Set(inView.map((r) => r.status).filter(Boolean))].sort();
+  filter.replaceChildren(el("option", { value: "", text: "Svi statusi" }), ...statuses.map((s) => el("option", { value: s, text: s })));
+  filter.value = statuses.includes(wanted) ? wanted : "";
   const { key, asc } = state.sort;
-  const wanted = $("#status-filter").value;
   const val = (r) => (key === "date" ? recordDate(r) : key === "ocena" ? Number(r.ocena) || 0 : String(r[key] || "").toLowerCase());
-  const rows = state.records.filter((r) => !wanted || r.status === wanted)
+  const rows = inView.filter((r) => !filter.value || r.status === filter.value)
     .sort((a, b) => (val(a) < val(b) ? -1 : val(a) > val(b) ? 1 : 0) * (asc ? 1 : -1));
   const body = $("#records tbody");
   body.replaceChildren(...rows.map((r) => {
@@ -455,7 +533,7 @@ function renderRecords() {
     return el("tr", {}, [
       el("td", { text: recordDate(r) }), el("td", { text: r.firma || "" }), el("td", {}, [title]),
       el("td", { text: r.izvor || "" }), el("td", { text: r.ocena ? `${r.ocena}/10` : "" }),
-      el("td", {}, [el("span", { class: "status", text: r.status || "" })]),
+      el("td", {}, [statusSelect(r)]),
       el("td", { class: "note", text: (r.napomena || "").split(" | ").join("\n") }),
     ]);
   }));

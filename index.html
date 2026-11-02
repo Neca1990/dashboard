@@ -29,6 +29,7 @@
       <nav>
         <button class="tab active" data-tab="settings">Podešavanja</button>
         <button class="tab" data-tab="records">Prijave</button>
+        <button class="tab" data-tab="archive">Arhiva</button>
       </nav>
       <button id="logout" class="ghost">Odjavi se</button>
     </header>
@@ -101,9 +102,11 @@
     <section id="tab-records" class="tab-panel hidden">
       <div class="card">
         <div class="row-between">
-          <h2>Prijave</h2>
+          <h2 id="records-title">Prijave</h2>
           <select id="status-filter"><option value="">Svi statusi</option></select>
         </div>
+        <p class="muted" id="records-hint"></p>
+        <p id="records-status" role="status"></p>
         <div class="table-wrap">
           <table id="records">
             <thead><tr>
