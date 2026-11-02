@@ -6,6 +6,8 @@ const PATHS = {
   sources: "config/sources.json",
   config: "config/config.json",
   companies: "config/companies.json",
+  profile: "config/profile.json",
+  languages: "config/languages.json",
   records: "data/applications.json",
 };
 const INTERVALS = [1, 2, 3, 4, 6, 8, 12, 24];
@@ -13,7 +15,14 @@ const STORE = { token: "dash.token", repo: "dash.repo" };
 
 const $ = (sel) => document.querySelector(sel);
 const state = { taxonomy: null, sources: null, config: null, sha: null, records: [], sort: { key: "date", asc: false },
-  companies: null, companiesSha: null, companiesDirty: false };
+  companies: null, companiesSha: null, companiesDirty: false,
+  profile: null, profileSha: null, profileDirty: false, languages: null };
+const RULES = [
+  ["language", "Obavezan jezik koji ne znam"],
+  ["residency", "Mora da živi u drugoj zemlji (npr. samo SAD, samo Ukrajina)"],
+  ["citizenship", "Traži se državljanstvo (npr. EU, SAD)"],
+  ["clearance", "Bezbednosna provera (security clearance)"],
+];
 
 // ---------- storage (may be unavailable in private windows) ----------
 function store(key, value) {
@@ -69,6 +78,7 @@ async function start() {
     $("#login").classList.add("hidden");
     $("#app").classList.remove("hidden");
     await loadCompanies();
+    await loadProfile();
     renderSettings();
     loadRecords();
   } catch (e) {
@@ -217,6 +227,7 @@ function renderSettings() {
     el("p", { class: "source-warning" }, [el("strong", { text: `⚠️ ${src.name}: ` }), src.warning])));
   interval.onchange = renderIntervalWarning;
   renderIntervalWarning();
+  if (state.profile) renderRules();
 }
 // A site is never asked more often than its minimum; tell the user which ones will run slower.
 function renderIntervalWarning() {
@@ -248,6 +259,7 @@ $("#save").addEventListener("click", async () => {
   if (empty) return status(`„${empty.name}": izaberi bar jednu specijalizaciju, nivo i lokaciju.`, "err");
   status("Čuvam…");
   if (state.companiesDirty && !(await saveCompanies())) return;
+  if (state.profileDirty && !(await saveProfile())) return;
   try {
     const res = await api(PATHS.config, {
       method: "PUT",
@@ -273,6 +285,75 @@ $("#save").addEventListener("click", async () => {
     }
   }
 });
+
+// ---------- languages & dealbreaker rules ----------
+async function loadProfile() {
+  try {
+    const [prof, langs] = await Promise.all([readJson(PATHS.profile), readJson(PATHS.languages)]);
+    state.profile = prof.data; state.profileSha = prof.sha; state.languages = langs.data; state.profileDirty = false;
+  } catch (_) {
+    state.profile = null;
+  }
+  renderRules();
+}
+function renderRules() {
+  const card = $("#rules-card");
+  card.classList.toggle("hidden", !state.profile);
+  if (!state.profile) return;
+  const known = state.profile.languages = state.profile.languages || [];
+  const catalog = state.languages.languages;
+  const levels = state.languages.levels;
+  const label = (name) => (catalog.find((l) => l.name === name) || {}).label || name;
+  $("#languages").replaceChildren(...known.map((lang, i) => {
+    const level = el("select");
+    levels.forEach((lv) => level.append(el("option", { value: lv.id, text: lv.name })));
+    level.value = lang.level;
+    level.addEventListener("change", () => { lang.level = level.value; state.profileDirty = true; });
+    const remove = el("button", { type: "button", class: "danger", text: "Ukloni", onclick: () => {
+      known.splice(i, 1); state.profileDirty = true; renderRules();
+    } });
+    return el("div", { class: "company" }, [el("span", { text: label(lang.name) }), el("span", { class: "meta" }, [level]), remove]);
+  }));
+  const add = $("#language-add");
+  add.replaceChildren(...catalog.filter((l) => !known.some((k) => k.name === l.name))
+    .map((l) => el("option", { value: l.name, text: l.label })));
+  $("#language-level").replaceChildren(...levels.map((lv) => el("option", { value: lv.id, text: lv.name })));
+  $("#language-level").value = "intermediate";
+  const policy = state.config.dealbreakers = state.config.dealbreakers || {};
+  $("#rules").replaceChildren(...RULES.map(([kind, text]) => {
+    const select = el("select");
+    select.append(el("option", { value: "drop", text: "izbaci oglas" }), el("option", { value: "warn", text: "samo upozori" }));
+    select.value = policy[kind] || "drop";
+    select.addEventListener("change", () => { policy[kind] = select.value; });
+    return el("label", { class: "rule" }, [text, select]);
+  }));
+}
+$("#language-add-btn").addEventListener("click", () => {
+  const name = $("#language-add").value;
+  if (!name) return;
+  state.profile.languages.push({ name, level: $("#language-level").value });
+  state.profileDirty = true;
+  renderRules();
+});
+async function saveProfile() {
+  try {
+    const res = await api(PATHS.profile, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Jezici izmenjeni preko dashboard-a",
+        content: textToB64(JSON.stringify(state.profile, null, 2) + "\n"),
+        sha: state.profileSha,
+      }),
+    });
+    state.profileSha = (await res.json()).content.sha;
+    state.profileDirty = false;
+    return true;
+  } catch (e) {
+    status(e.status === 409 ? "Profil je u međuvremenu izmenjen – osveži stranicu." : "Čuvanje jezika nije uspelo.", "err");
+    return false;
+  }
+}
 
 // ---------- tracked companies ----------
 async function loadCompanies() {
@@ -339,6 +420,7 @@ async function saveCompanies() {
     if (e.status === 409) {
       status("Lista firmi je u međuvremenu dopunjena. Učitao sam najnoviju – ponovi izmene firmi i sačuvaj.", "err");
       await loadCompanies();
+    await loadProfile();
     } else {
       status("Čuvanje liste firmi nije uspelo.", "err");
     }
@@ -374,9 +456,10 @@ function renderRecords() {
       el("td", { text: recordDate(r) }), el("td", { text: r.firma || "" }), el("td", {}, [title]),
       el("td", { text: r.izvor || "" }), el("td", { text: r.ocena ? `${r.ocena}/10` : "" }),
       el("td", {}, [el("span", { class: "status", text: r.status || "" })]),
+      el("td", { class: "note", text: (r.napomena || "").split(" | ").join("\n") }),
     ]);
   }));
-  if (!rows.length) body.append(el("tr", {}, [el("td", { colspan: "6", class: "muted", text: "Nema zapisa." })]));
+  if (!rows.length) body.append(el("tr", {}, [el("td", { colspan: "7", class: "muted", text: "Nema zapisa." })]));
   document.querySelectorAll("#records th").forEach((th) => {
     th.classList.toggle("sorted", th.dataset.key === key);
     th.classList.toggle("asc", th.dataset.key === key && asc);

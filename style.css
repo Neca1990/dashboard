@@ -68,3 +68,7 @@ label.inline input { width: 80px; }
 .add-company { align-items: end; }
 .add-company button { margin-bottom: 12px; }
 .source-warning { margin: 8px 0 0; padding: 8px 10px; border-left: 3px solid #b26a00; background: var(--chip); border-radius: 4px; font-size: .9rem; }
+.rules { display: flex; flex-direction: column; gap: 6px; }
+.rule { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-direction: row; margin: 0; color: var(--text); padding: 6px 0; border-bottom: 1px solid var(--border); }
+.rule select { min-width: 150px; }
+td.note { max-width: 320px; font-size: .82rem; color: var(--muted); white-space: pre-line; }

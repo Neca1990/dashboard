@@ -63,6 +63,19 @@
         <div id="source-warnings"></div>
       </div>
 
+      <div class="card hidden" id="rules-card">
+        <h2>Jezici koje znam</h2>
+        <div id="languages" class="company-list"></div>
+        <div class="grid add-company">
+          <label>Jezik <select id="language-add"></select></label>
+          <label>Nivo <select id="language-level"></select></label>
+          <button type="button" id="language-add-btn" class="ghost">+ Dodaj jezik</button>
+        </div>
+        <h2>Uslovi koji isključuju oglas</h2>
+        <p class="muted">Kad oglas obavezno traži nešto od ovoga, a ti to nemaš: izbaci ga ili samo upozori u poruci.</p>
+        <div id="rules" class="rules"></div>
+      </div>
+
       <div class="card hidden" id="companies-card">
         <div class="row-between">
           <h2 id="companies-title">Firme</h2>
@@ -95,7 +108,7 @@
           <table id="records">
             <thead><tr>
               <th data-key="date">Datum</th><th data-key="firma">Firma</th><th data-key="pozicija">Pozicija</th>
-              <th data-key="izvor">Izvor</th><th data-key="ocena">Ocena</th><th data-key="status">Status</th>
+              <th data-key="izvor">Izvor</th><th data-key="ocena">Ocena</th><th data-key="status">Status</th><th data-key="napomena">Napomena</th>
             </tr></thead>
             <tbody></tbody>
           </table>
