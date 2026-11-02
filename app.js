@@ -5,13 +5,15 @@ const PATHS = {
   taxonomy: "config/taxonomy.json",
   sources: "config/sources.json",
   config: "config/config.json",
+  companies: "config/companies.json",
   records: "data/applications.json",
 };
 const INTERVALS = [1, 2, 3, 4, 6, 8, 12, 24];
 const STORE = { token: "dash.token", repo: "dash.repo" };
 
 const $ = (sel) => document.querySelector(sel);
-const state = { taxonomy: null, sources: null, config: null, sha: null, records: [], sort: { key: "date", asc: false } };
+const state = { taxonomy: null, sources: null, config: null, sha: null, records: [], sort: { key: "date", asc: false },
+  companies: null, companiesSha: null, companiesDirty: false };
 
 // ---------- storage (may be unavailable in private windows) ----------
 function store(key, value) {
@@ -66,6 +68,7 @@ async function start() {
     state.taxonomy = tax.data; state.sources = src.data; state.config = cfg.data; state.sha = cfg.sha;
     $("#login").classList.add("hidden");
     $("#app").classList.remove("hidden");
+    await loadCompanies();
     renderSettings();
     loadRecords();
   } catch (e) {
@@ -210,6 +213,8 @@ function renderSettings() {
       el("strong", { text: `${src.name} (${src.min_interval_hours}h): ` }), src.reason || "",
     ]))]);
   box.after(reasons);
+  $("#source-warnings").replaceChildren(...state.sources.sources.filter((src) => src.warning).map((src) =>
+    el("p", { class: "source-warning" }, [el("strong", { text: `⚠️ ${src.name}: ` }), src.warning])));
   interval.onchange = renderIntervalWarning;
   renderIntervalWarning();
 }
@@ -242,6 +247,7 @@ $("#save").addEventListener("click", async () => {
   const empty = cfg.searches.find((s) => !s.specializations.length || !s.seniority.length || !s.locations.length);
   if (empty) return status(`„${empty.name}": izaberi bar jednu specijalizaciju, nivo i lokaciju.`, "err");
   status("Čuvam…");
+  if (state.companiesDirty && !(await saveCompanies())) return;
   try {
     const res = await api(PATHS.config, {
       method: "PUT",
@@ -267,6 +273,78 @@ $("#save").addEventListener("click", async () => {
     }
   }
 });
+
+// ---------- tracked companies ----------
+async function loadCompanies() {
+  try {
+    const res = await readJson(PATHS.companies);
+    state.companies = res.data; state.companiesSha = res.sha; state.companiesDirty = false;
+  } catch (_) {
+    state.companies = null;
+  }
+  renderCompanies();
+}
+function renderCompanies() {
+  const card = $("#companies-card");
+  const reg = state.companies;
+  card.classList.toggle("hidden", !reg);
+  if (!reg) return;
+  const source = state.sources.sources.find((s) => s.id === "ats");
+  $("#companies-title").textContent = source ? source.name : "Firme";
+  const perRun = $("#companies-per-run");
+  perRun.value = reg.max_per_run || 15;
+  perRun.onchange = () => { reg.max_per_run = Math.max(1, Math.min(50, Number(perRun.value) || 15)); state.companiesDirty = true; };
+  const sorted = [...reg.companies].sort((a, b) =>
+    (b.enabled !== false) - (a.enabled !== false) || String(a.name).localeCompare(String(b.name)));
+  $("#companies").replaceChildren(...sorted.map((c) => {
+    const input = el("input", { type: "checkbox" });
+    input.checked = c.enabled !== false;
+    input.addEventListener("change", () => { c.enabled = input.checked; state.companiesDirty = true; });
+    const meta = el("span", { class: "meta", text: `${c.ats}/${c.slug}${c.region === "eu" ? " (eu)" : ""}` });
+    if (c.last_error || c.note) meta.append(el("br"), el("span", { class: "err", text: c.note || c.last_error }));
+    return el("label", { class: "company", title: c.discovered_from || "" }, [input, c.name || c.slug, meta]);
+  }));
+  const ats = $("#company-ats");
+  ats.replaceChildren(...(reg.ats_types || []).map((t) => el("option", { value: t, text: t })));
+}
+$("#company-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const reg = state.companies;
+  const slug = $("#company-slug").value.trim().toLowerCase().replace(/^https?:\/\/[^/]+\//, "").split("/")[0];
+  const ats = $("#company-ats").value;
+  if (!slug) return;
+  if (reg.companies.some((c) => c.ats === ats && c.slug === slug)) return status("Ta firma je već na listi.", "err");
+  reg.companies.push({ name: $("#company-name").value.trim() || slug, ats, slug, region: $("#company-region").value,
+    enabled: true, discovered_from: "dodato ručno", added_at: new Date().toISOString().slice(0, 10) });
+  state.companiesDirty = true;
+  ev.target.reset();
+  renderCompanies();
+  status("Firma dodata – klikni Sačuvaj.");
+});
+async function saveCompanies() {
+  try {
+    const res = await api(PATHS.companies, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Lista firmi izmenjena preko dashboard-a",
+        content: textToB64(JSON.stringify(state.companies, null, 2) + "\n"),
+        sha: state.companiesSha,
+      }),
+    });
+    state.companiesSha = (await res.json()).content.sha;
+    state.companiesDirty = false;
+    return true;
+  } catch (e) {
+    if (e.status === 409) {
+      status("Lista firmi je u međuvremenu dopunjena. Učitao sam najnoviju – ponovi izmene firmi i sačuvaj.", "err");
+      await loadCompanies();
+    } else {
+      status("Čuvanje liste firmi nije uspelo.", "err");
+    }
+    return false;
+  }
+}
 
 // ---------- records table ----------
 async function loadRecords() {

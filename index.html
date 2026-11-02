@@ -60,6 +60,23 @@
       <div class="card">
         <h2>Izvori</h2>
         <div id="sources" class="checks"></div>
+        <div id="source-warnings"></div>
+      </div>
+
+      <div class="card hidden" id="companies-card">
+        <div class="row-between">
+          <h2 id="companies-title">Firme</h2>
+          <label class="inline">Firmi po krugu <input id="companies-per-run" type="number" min="1" max="50"></label>
+        </div>
+        <p class="muted">Firme se same dodaju kad se njihova karijerna stranica pojavi u nekom oglasu. Ovde ih uključuješ, isključuješ ili dodaješ ručno.</p>
+        <div id="companies" class="company-list"></div>
+        <form id="company-form" class="grid add-company">
+          <label>Naziv <input id="company-name" type="text" required></label>
+          <label>Sistem <select id="company-ats"></select></label>
+          <label>Oznaka (slug) <input id="company-slug" type="text" required placeholder="npr. acme"></label>
+          <label>Region <select id="company-region"><option value="global">global</option><option value="eu">eu</option></select></label>
+          <button type="submit" class="ghost">+ Dodaj firmu</button>
+        </form>
       </div>
 
       <div class="savebar">
