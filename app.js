@@ -616,7 +616,14 @@ async function checkVersion() {
     $("#update-banner").classList.remove("hidden");
   } catch (_) { /* try again later */ }
 }
+// "20261103e" -> "v 03.11.2026 e", shown in the corner so the user can tell which version is open
+function showVersion() {
+  const v = currentVersion();
+  const m = v.match(/^(\d{4})(\d{2})(\d{2})(\w*)$/);
+  $("#version").textContent = m ? `v ${m[3]}.${m[2]}.${m[1]} ${m[4]}`.trim() : v ? `v ${v}` : "";
+}
 function startLiveUpdates() {
+  showVersion();
   // the sync checkbox is not a setting, so it doesn't count as an unsaved change
   const touched = (e) => { if (e.target.id !== "sync-force") state.configDirty = true; };
   $("#tab-settings").addEventListener("input", touched);
