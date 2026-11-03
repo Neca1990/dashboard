@@ -274,7 +274,10 @@ $("#save").addEventListener("click", async () => {
   cfg.schedule.active_from = $("#active-from").value || "08:00";
   cfg.schedule.active_to = $("#active-to").value || "22:00";
   cfg.max_messages_per_run = Math.max(1, Math.min(30, Number($("#max-messages").value) || 8));
-  cfg.max_age_days = Math.max(1, Math.min(14, Number($("#max-age").value) || 3));
+  cfg.max_age_days = Math.max(1, Math.min(60, Number($("#max-age").value) || 3));
+  // show what is actually saved, so a value outside the limits is never silently replaced
+  $("#max-messages").value = cfg.max_messages_per_run;
+  $("#max-age").value = cfg.max_age_days;
   const empty = cfg.searches.find((s) => !s.specializations.length || !s.seniority.length || !s.locations.length);
   if (empty) return status(`„${empty.name}": izaberi bar jednu specijalizaciju, nivo i lokaciju.`, "err");
   status("Čuvam…");
