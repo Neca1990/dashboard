@@ -94,6 +94,7 @@ async function start() {
     loadRecords();
     loadRuns();
     loadLastFullScan();
+    startLiveUpdates();
   } catch (e) {
     showLogin(e.status === 401 ? "Ključ nije ispravan ili je istekao." :
       e.status === 404 ? "Repozitorijum nije pronađen ili ključ nema pristup." : "Greška pri učitavanju. Pokušaj ponovo.");
@@ -218,6 +219,7 @@ function renderSearches() {
 }
 function renderSettings() {
   const cfg = state.config;
+  state.configDirty = false;
   renderSearches();
   const interval = $("#interval");
   interval.replaceChildren(...INTERVALS.map((h) => el("option", { value: String(h), text: h === 1 ? "svakih sat" : `svaka ${h}h` })));
@@ -304,6 +306,7 @@ $("#save").addEventListener("click", async () => {
       }),
     });
     state.sha = (await res.json()).content.sha;
+    state.configDirty = false;
     status("✅ Sačuvano. Važi od sledeće provere.", "ok");
   } catch (e) {
     if (e.status === 409) {
@@ -560,6 +563,70 @@ $("#full-scan").addEventListener("click", async () => {
     $("#full-scan-status").textContent = `✅ Gotovo ${when(last.updated_at)}. Izveštaj po sajtovima je stigao na Telegram.`;
   }
 });
+
+// ---------- live updates ----------
+// While the page is visible: once a minute ask GitHub whether anything changed (an unchanged answer is a 304,
+// which doesn't count against the API limit) and reload only what changed; every few minutes check whether
+// a newer dashboard version was published.
+const POLL_MS = 60000, VERSION_MS = 5 * 60000;
+const etags = {};
+async function changed(path) {
+  const res = await fetch(`https://api.github.com/repos/${load(STORE.repo)}/${path}`, {
+    headers: { Authorization: `Bearer ${load(STORE.token)}`, Accept: "application/vnd.github+json",
+      ...(etags[path] ? { "If-None-Match": etags[path] } : {}) },
+    cache: "no-store",
+  });
+  if (res.status === 304 || !res.ok) return false;
+  const first = !(path in etags);
+  etags[path] = res.headers.get("ETag") || "";
+  return !first;
+}
+function editing() {
+  return state.configDirty || state.profileDirty || state.companiesDirty;
+}
+async function refreshData() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    if (await changed(`${WORKFLOW}/runs?per_page=6`)) { loadRuns(); loadLastFullScan(); }
+    if (!(await changed("commits?per_page=1"))) return;
+    // a status menu that is open must not be rebuilt under the cursor; it is picked up on the next round
+    if (!document.activeElement?.matches?.("select.status")) loadRecords();
+    const cfg = await readJson(PATHS.config);
+    if (cfg.sha === state.sha) return;
+    if (editing()) {
+      status("Podešavanja su izmenjena negde drugde – sačuvaj ili osveži stranicu da vidiš najnovija.", "err");
+    } else {
+      state.config = cfg.data; state.sha = cfg.sha;
+      renderSettings();
+      status("↻ Podešavanja su osvežena.", "ok");
+    }
+  } catch (_) { /* offline or rate limited: try again next round */ }
+}
+function currentVersion() {
+  return (document.querySelector('script[src*="app.js"]')?.getAttribute("src").match(/v=([\w-]+)/) || [])[1] || "";
+}
+async function checkVersion() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    const html = await (await fetch(`index.html?check=${Date.now()}`, { cache: "no-store" })).text();
+    const latest = (html.match(/app\.js\?v=([\w-]+)/) || [])[1];
+    if (!latest || latest === currentVersion()) return;
+    const busy = editing() || [...document.querySelectorAll("#sync-now, #full-scan")].some((b) => b.disabled);
+    if (!busy) return location.reload();
+    $("#update-banner").classList.remove("hidden");
+  } catch (_) { /* try again later */ }
+}
+function startLiveUpdates() {
+  // the sync checkbox is not a setting, so it doesn't count as an unsaved change
+  const touched = (e) => { if (e.target.id !== "sync-force") state.configDirty = true; };
+  $("#tab-settings").addEventListener("input", touched);
+  $("#tab-settings").addEventListener("change", touched);
+  $("#update-reload").addEventListener("click", () => location.reload());
+  changed("commits?per_page=1"); changed(`${WORKFLOW}/runs?per_page=6`);  // remember the starting point
+  setInterval(refreshData, POLL_MS);
+  setInterval(checkVersion, VERSION_MS);
+  document.addEventListener("visibilitychange", () => { refreshData(); checkVersion(); });
+}
 
 // ---------- records table ----------
 async function loadRecords() {
