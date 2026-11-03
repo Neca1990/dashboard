@@ -87,12 +87,13 @@ async function start() {
     const [tax, src, cfg] = await Promise.all([readJson(PATHS.taxonomy), readJson(PATHS.sources), readJson(PATHS.config)]);
     state.taxonomy = tax.data; state.sources = src.data; state.config = cfg.data; state.sha = cfg.sha;
     $("#login").classList.add("hidden");
-    $("#app").classList.remove("hidden");
+    showTab(savedView()?.tab);  // open straight on the tab the reload came from, never flashing the settings
     await loadCompanies();
     await loadProfile();
     renderSettings();
     await loadRecords();
     restoreView();
+    $("#app").classList.remove("hidden");  // shown once, complete, with a short fade
     loadRuns();
     loadLastFullScan();
     startLiveUpdates();
@@ -121,11 +122,17 @@ $("#logout").addEventListener("click", () => {
 });
 
 // ---------- tabs ----------
-document.querySelectorAll(".tab").forEach((btn) => btn.addEventListener("click", () => {
+function showTab(tab) {
+  const btn = document.querySelector(`.tab[data-tab="${tab}"]`);
+  if (!btn) return null;
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
   // the archive is the same table, filtered to finished records
-  const panel = btn.dataset.tab === "archive" ? "records" : btn.dataset.tab;
+  const panel = tab === "archive" ? "records" : tab;
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("hidden", p.id !== `tab-${panel}`));
+  return panel;
+}
+document.querySelectorAll(".tab").forEach((btn) => btn.addEventListener("click", () => {
+  const panel = showTab(btn.dataset.tab);
   if (panel === "records") {
     state.view = btn.dataset.tab;
     $("#status-filter").value = "";
@@ -632,12 +639,12 @@ function saveView() {
     sessionStorage.setItem(VIEW_KEY, JSON.stringify({ tab, filter: $("#status-filter").value, sort: state.sort, scroll: scrollY }));
   } catch (_) { /* private mode: the page just opens on the first tab */ }
 }
+function savedView() {
+  try { return JSON.parse(sessionStorage.getItem(VIEW_KEY) || "null"); } catch (_) { return null; }
+}
 function restoreView() {
-  let view;
-  try {
-    view = JSON.parse(sessionStorage.getItem(VIEW_KEY) || "null");
-    sessionStorage.removeItem(VIEW_KEY);
-  } catch (_) { return; }
+  const view = savedView();
+  try { sessionStorage.removeItem(VIEW_KEY); } catch (_) { /* nothing saved */ }
   if (!view) return;
   if (view.sort) state.sort = view.sort;
   document.querySelector(`.tab[data-tab="${view.tab}"]`)?.click();
