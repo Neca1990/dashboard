@@ -612,7 +612,8 @@ async function checkVersion() {
     const latest = (html.match(/app\.js\?v=([\w-]+)/) || [])[1];
     if (!latest || latest === currentVersion()) return;
     const busy = editing() || [...document.querySelectorAll("#sync-now, #full-scan")].some((b) => b.disabled);
-    if (!busy) return location.reload();
+    // a plain reload may get the browser's cached page (GitHub Pages lets it keep one for 10 minutes)
+    if (!busy) return location.replace(`${location.pathname}?v=${latest}`);
     $("#update-banner").classList.remove("hidden");
   } catch (_) { /* try again later */ }
 }
@@ -628,7 +629,7 @@ function startLiveUpdates() {
   const touched = (e) => { if (e.target.id !== "sync-force") state.configDirty = true; };
   $("#tab-settings").addEventListener("input", touched);
   $("#tab-settings").addEventListener("change", touched);
-  $("#update-reload").addEventListener("click", () => location.reload());
+  $("#update-reload").addEventListener("click", () => location.replace(`${location.pathname}?v=${Date.now()}`));
   changed("commits?per_page=1"); changed(`${WORKFLOW}/runs?per_page=6`);  // remember the starting point
   setInterval(refreshData, POLL_MS);
   setInterval(checkVersion, VERSION_MS);
