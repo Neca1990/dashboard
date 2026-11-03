@@ -91,7 +91,8 @@ async function start() {
     await loadCompanies();
     await loadProfile();
     renderSettings();
-    loadRecords();
+    await loadRecords();
+    restoreView();
     loadRuns();
     loadLastFullScan();
     startLiveUpdates();
@@ -613,7 +614,7 @@ async function checkVersion() {
     if (!latest || latest === currentVersion()) return;
     const busy = editing() || [...document.querySelectorAll("#sync-now, #full-scan")].some((b) => b.disabled);
     // a plain reload may get the browser's cached page (GitHub Pages lets it keep one for 10 minutes)
-    if (!busy) return location.replace(`${location.pathname}?v=${latest}`);
+    if (!busy) { saveView(); return location.replace(`${location.pathname}?v=${latest}`); }
     $("#update-banner").classList.remove("hidden");
   } catch (_) { /* try again later */ }
 }
@@ -623,13 +624,38 @@ function showVersion() {
   const m = v.match(/^(\d{4})(\d{2})(\d{2})(\w*)$/);
   $("#version").textContent = m ? `v ${m[3]}.${m[2]}.${m[1]} ${m[4]}`.trim() : v ? `v ${v}` : "";
 }
+// a reload for a new version comes back to the same tab, filter, sort and scroll position
+const VIEW_KEY = "dash.view";
+function saveView() {
+  const tab = document.querySelector(".tab.active")?.dataset.tab || "settings";
+  try {
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify({ tab, filter: $("#status-filter").value, sort: state.sort, scroll: scrollY }));
+  } catch (_) { /* private mode: the page just opens on the first tab */ }
+}
+function restoreView() {
+  let view;
+  try {
+    view = JSON.parse(sessionStorage.getItem(VIEW_KEY) || "null");
+    sessionStorage.removeItem(VIEW_KEY);
+  } catch (_) { return; }
+  if (!view) return;
+  if (view.sort) state.sort = view.sort;
+  document.querySelector(`.tab[data-tab="${view.tab}"]`)?.click();
+  if (view.filter) {
+    const filter = $("#status-filter");
+    filter.append(el("option", { value: view.filter, text: view.filter }));
+    filter.value = view.filter;
+    renderRecords();
+  }
+  requestAnimationFrame(() => scrollTo(0, view.scroll || 0));
+}
 function startLiveUpdates() {
   showVersion();
   // the sync checkbox is not a setting, so it doesn't count as an unsaved change
   const touched = (e) => { if (e.target.id !== "sync-force") state.configDirty = true; };
   $("#tab-settings").addEventListener("input", touched);
   $("#tab-settings").addEventListener("change", touched);
-  $("#update-reload").addEventListener("click", () => location.replace(`${location.pathname}?v=${Date.now()}`));
+  $("#update-reload").addEventListener("click", () => { saveView(); location.replace(`${location.pathname}?v=${Date.now()}`); });
   changed("commits?per_page=1"); changed(`${WORKFLOW}/runs?per_page=6`);  // remember the starting point
   setInterval(refreshData, POLL_MS);
   setInterval(checkVersion, VERSION_MS);
