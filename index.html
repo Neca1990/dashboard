@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>Dashboard</title>
-  <link rel="stylesheet" href="style.css?v=20261103b">
+  <link rel="stylesheet" href="style.css?v=20261103c">
 </head>
 <body>
   <main id="login" class="login hidden">
@@ -68,6 +68,17 @@
         </div>
         <p class="warning" id="interval-warning" role="status"></p>
         <p class="muted" id="tz-note"></p>
+        <div class="full-scan">
+          <div class="row-between">
+            <h3>Pretraga svih oglasa</h3>
+            <button id="full-scan">🔎 Pretraži sve sada</button>
+          </div>
+          <p class="muted">Jednom pretraži sve otvorene oglase (ne samo najnovije) na izvorima izabranim ispod, za tvoje
+            pretrage, bez ograničenja starosti. Prolaze iste provere kao i obično, a na Telegram stiže izveštaj po sajtu.
+            Važe sačuvani izvori – ako menjaš izvore, prvo sačuvaj.</p>
+          <p class="muted" id="full-scan-sources"></p>
+          <p id="full-scan-status" role="status"></p>
+        </div>
       </div>
 
       <div class="card">
@@ -131,6 +142,6 @@
       </div>
     </section>
   </div>
-  <script src="app.js?v=20261103b"></script>
+  <script src="app.js?v=20261103c"></script>
 </body>
 </html>

@@ -107,3 +107,6 @@ button:disabled { opacity: .55; cursor: default; }
 td.files { white-space: nowrap; }
 td.files button.file { font-size: .8rem; padding: 3px 8px; margin: 0 4px 4px 0; }
 td.note { min-width: 220px; }
+
+.full-scan { border-top: 1px solid var(--border, #ddd); margin-top: 16px; padding-top: 14px; }
+.full-scan .muted { margin: 6px 0; }

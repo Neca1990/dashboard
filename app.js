@@ -232,7 +232,7 @@ function renderSettings() {
   state.sources.sources.forEach((src) => {
     const input = el("input", { type: "checkbox" });
     input.checked = cfg.sources_enabled[src.id] ?? src.enabled;
-    input.addEventListener("change", () => { cfg.sources_enabled[src.id] = input.checked; renderIntervalWarning(); });
+    input.addEventListener("change", () => { cfg.sources_enabled[src.id] = input.checked; renderIntervalWarning(); renderFullScanNote(); });
     box.append(el("label", { class: "check", title: src.reason || "" }, [
       input, src.name, el("small", { text: `min. ${src.min_interval_hours}h` }),
     ]));
@@ -247,7 +247,16 @@ function renderSettings() {
     el("p", { class: "source-warning" }, [el("strong", { text: `⚠️ ${src.name}: ` }), src.warning])));
   interval.onchange = renderIntervalWarning;
   renderIntervalWarning();
+  renderFullScanNote();
   if (state.profile) renderRules();
+}
+// Not every site can be searched deeper than its newest postings; say which ones can.
+function renderFullScanNote() {
+  const on = state.sources.sources.filter((src) => state.config.sources_enabled[src.id] ?? src.enabled);
+  const deep = on.filter((src) => src.full_scan).map((src) => src.name);
+  const newest = on.filter((src) => !src.full_scan).map((src) => src.name);
+  $("#full-scan-sources").textContent = (deep.length ? `Svi oglasi: ${deep.join(", ")}.` : "Nijedan izabrani izvor ne podržava pretragu svih oglasa.")
+    + (newest.length ? ` Samo najnoviji (sajt ne nudi više): ${newest.join(", ")}.` : "");
 }
 // A site is never asked more often than its minimum; tell the user which ones will run slower.
 function renderIntervalWarning() {
@@ -486,43 +495,53 @@ async function loadRuns() {
   $("#sync-last").textContent = done ? `Poslednja uspešna sinhronizacija: ${when(done.updated_at)}` : "Još nema uspešne sinhronizacije.";
   $("#sync-runs").replaceChildren(...runs.map((r) => el("tr", {}, [
     el("td", { text: when(r.created_at) }),
-    el("td", { text: r.display_title === "dashboard" ? "ručno (ovde)" : "automatski" }),
+    el("td", { text: { dashboard: "ručno (ovde)", "dashboard-sve": "pretraga svih (ovde)" }[r.display_title] || "automatski" }),
     el("td", { text: runLabel(r) }),
   ])));
   return runs;
 }
-$("#sync-now").addEventListener("click", async () => {
-  const btn = $("#sync-now");
+// starts the workflow and follows that run until it finishes (it shows up a few seconds after the dispatch)
+async function runWorkflow({ btn, statusEl, inputs, trigger, doneText, maxMinutes = 6 }) {
+  const say = (text, kind = "") => { statusEl.textContent = text; statusEl.className = kind; };
   btn.disabled = true;
   const started = Date.now() - 10000;
-  syncStatus("Pokrećem…");
+  say("Pokrećem…");
   try {
     await gh(`${WORKFLOW}/dispatches`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref: "main", inputs: { force_search: $("#sync-force").checked ? "true" : "false", trigger: "dashboard" } }),
+      body: JSON.stringify({ ref: "main", inputs: { ...inputs, trigger } }),
     });
   } catch (e) {
-    syncStatus(e.status === 403 || e.status === 404 ? ACTIONS_HELP : "Pokretanje nije uspelo. Pokušaj ponovo.", "err");
+    say(e.status === 403 || e.status === 404 ? ACTIONS_HELP : "Pokretanje nije uspelo. Pokušaj ponovo.", "err");
     btn.disabled = false;
     return;
   }
-  // the run shows up a few seconds after the dispatch; follow it until it finishes (max ~6 min)
-  for (let i = 0; i < 45; i++) {
+  for (let i = 0; i < maxMinutes * 7.5; i++) {
     await new Promise((r) => setTimeout(r, 8000));
     let runs;
     try { runs = await loadRuns(); } catch (_) { continue; }
-    const run = runs.find((r) => r.display_title === "dashboard" && new Date(r.created_at) >= started);
-    if (!run) { syncStatus("Pokrećem… (GitHub priprema pokretanje)"); continue; }
-    if (run.status !== "completed") { syncStatus(`Sinhronizacija ${runLabel(run)}…`); continue; }
+    const run = runs.find((r) => r.display_title === trigger && new Date(r.created_at) >= started);
+    if (!run) { say("Pokrećem… (GitHub priprema pokretanje)"); continue; }
+    if (run.status !== "completed") { say(`${runLabel(run)}…`); continue; }
     btn.disabled = false;
-    if (run.conclusion !== "success") return syncStatus(`Sinhronizacija nije uspela (${runLabel(run)}).`, "err");
+    if (run.conclusion !== "success") return say(`Nije uspelo (${runLabel(run)}).`, "err");
     await loadRecords();
-    return syncStatus("✅ Gotovo. Telegram i tabela prijava su ažurirani.", "ok");
+    return say(doneText, "ok");
   }
   btn.disabled = false;
-  syncStatus("Sinhronizacija traje duže nego obično – proveri malo kasnije.", "err");
-});
+  say("Traje duže nego obično – proveri malo kasnije.", "err");
+}
+$("#sync-now").addEventListener("click", () => runWorkflow({
+  btn: $("#sync-now"), statusEl: $("#sync-status"), trigger: "dashboard",
+  inputs: { force_search: $("#sync-force").checked ? "true" : "false" },
+  doneText: "✅ Gotovo. Telegram i tabela prijava su ažurirani.",
+}));
+$("#full-scan").addEventListener("click", () => runWorkflow({
+  btn: $("#full-scan"), statusEl: $("#full-scan-status"), trigger: "dashboard-sve", maxMinutes: 15,
+  inputs: { full_scan: "true" },
+  doneText: "✅ Gotovo. Izveštaj po sajtovima je stigao na Telegram.",
+}));
 
 // ---------- records table ----------
 async function loadRecords() {
