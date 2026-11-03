@@ -93,6 +93,7 @@ async function start() {
     renderSettings();
     await loadRecords();
     restoreView();
+    $("#loader").classList.add("hidden");
     $("#app").classList.remove("hidden");  // shown once, complete, with a short fade
     loadRuns();
     loadLastFullScan();
@@ -103,6 +104,7 @@ async function start() {
   }
 }
 function showLogin(message = "") {
+  $("#loader").classList.add("hidden");
   $("#app").classList.add("hidden");
   $("#login").classList.remove("hidden");
   $("#login-error").textContent = message;
