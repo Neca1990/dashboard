@@ -565,10 +565,10 @@ $("#full-scan").addEventListener("click", async () => {
 });
 
 // ---------- live updates ----------
-// While the page is visible: once a minute ask GitHub whether anything changed (an unchanged answer is a 304,
-// which doesn't count against the API limit) and reload only what changed; every few minutes check whether
+// While the page is visible: every 15 seconds ask GitHub whether anything changed (an unchanged answer is a 304,
+// which doesn't count against the API limit) and reload only what changed; every 30 seconds check whether
 // a newer dashboard version was published.
-const POLL_MS = 60000, VERSION_MS = 5 * 60000;
+const POLL_MS = 15000, VERSION_MS = 30000;
 const etags = {};
 async function changed(path) {
   const res = await fetch(`https://api.github.com/repos/${load(STORE.repo)}/${path}`, {
