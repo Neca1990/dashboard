@@ -93,6 +93,7 @@ async function start() {
     renderSettings();
     loadRecords();
     loadRuns();
+    loadLastFullScan();
   } catch (e) {
     showLogin(e.status === 401 ? "Ključ nije ispravan ili je istekao." :
       e.status === 404 ? "Repozitorijum nije pronađen ili ključ nema pristup." : "Greška pri učitavanju. Pokušaj ponovo.");
@@ -537,11 +538,28 @@ $("#sync-now").addEventListener("click", () => runWorkflow({
   inputs: { force_search: $("#sync-force").checked ? "true" : "false" },
   doneText: "✅ Gotovo. Telegram i tabela prijava su ažurirani.",
 }));
-$("#full-scan").addEventListener("click", () => runWorkflow({
-  btn: $("#full-scan"), statusEl: $("#full-scan-status"), trigger: "dashboard-sve", maxMinutes: 15,
-  inputs: { full_scan: "true" },
-  doneText: "✅ Gotovo. Izveštaj po sajtovima je stigao na Telegram.",
-}));
+// the last successful "search all" is looked up among recent runs (it is rarer than the hourly ones)
+async function loadLastFullScan() {
+  try {
+    const runs = (await (await gh(`${WORKFLOW}/runs?per_page=100&event=workflow_dispatch`)).json()).workflow_runs || [];
+    const last = runs.find((r) => r.display_title === "dashboard-sve" && r.status === "completed" && r.conclusion === "success");
+    $("#full-scan-last").textContent = last ? `Poslednja pretraga svih oglasa: ${when(last.updated_at)}` : "Pretraga svih oglasa još nije pokretana.";
+    return last;
+  } catch (_) {
+    $("#full-scan-last").textContent = "";
+  }
+}
+$("#full-scan").addEventListener("click", async () => {
+  await runWorkflow({
+    btn: $("#full-scan"), statusEl: $("#full-scan-status"), trigger: "dashboard-sve", maxMinutes: 15,
+    inputs: { full_scan: "true" },
+    doneText: "✅ Gotovo. Izveštaj po sajtovima je stigao na Telegram.",
+  });
+  const last = await loadLastFullScan();
+  if (last && $("#full-scan-status").className === "ok") {
+    $("#full-scan-status").textContent = `✅ Gotovo ${when(last.updated_at)}. Izveštaj po sajtovima je stigao na Telegram.`;
+  }
+});
 
 // ---------- records table ----------
 async function loadRecords() {
