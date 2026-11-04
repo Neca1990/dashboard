@@ -782,7 +782,7 @@ function hhCard(a) {
   remove.addEventListener("click", () => {
     if (!confirm(`Ukloniti ${a.firma} sa liste?`)) return;
     hhSave((reg) => { reg.agencies = reg.agencies.filter((x) => x.id !== a.id); }, `Headhunter uklonjen: ${a.firma}`)
-      .then((ok) => ok && hhStatus(`🗑 ${a.firma} je uklonjen sa liste.`, "ok"));
+      .then((ok) => { if (ok) { hhStatus(`🗑 ${a.firma} je uklonjen sa liste.`, "ok"); deleteFiles([a.cv_fajl, a.prilog]); } });
   });
   const actions = el("div", { class: "hh-actions" }, [create]);
   if (a.prilog) actions.append(fileButton(a.prilog, "📎 Prilog"));
@@ -838,6 +838,16 @@ function mailMenu(a) {
 document.addEventListener("click", (ev) => {
   document.querySelectorAll(".mail-menu[open]").forEach((d) => { if (!d.contains(ev.target)) d.open = false; });
 });
+// the agency's CV and attachment go with it (best effort: a file left behind does no harm)
+async function deleteFiles(paths) {
+  for (const path of paths.filter(Boolean)) {
+    try {
+      const { sha } = await (await api(path)).json();
+      await api(path, { method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: `Headhunter: obrisan ${path.split("/").pop()}`, sha }) });
+    } catch (_) { /* already gone */ }
+  }
+}
 function hhEditor(a) {
   const m = a.mail;
   const to = el("input", { type: "email" }); to.value = m.to || a.email || "";
