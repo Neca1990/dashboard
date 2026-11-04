@@ -761,7 +761,8 @@ const HH_SECTIONS = [
   ["Poslato", ["Poslato", "Odgovorili", "Intervju"]],
   ["Završeno", ["Bez odgovora", "Odbijeno"]],
 ];
-const today = () => new Date().toISOString().slice(0, 10);
+// local date, so an agency added after midnight is not dated the day before
+const today = () => new Date().toLocaleDateString("sv-SE");
 function daysSince(date) {
   return Math.floor((new Date(today()) - new Date(date.slice(0, 10))) / 86400000);
 }
@@ -964,7 +965,7 @@ $("#hh-form").addEventListener("submit", async (ev) => {
   let prilog = "";
   try {
     if (file) {
-      prilog = `data/headhunters/${id}/${safeName(file.name)}`;
+      prilog = `data/headhunters/${id}/prilog_${safeName(file.name)}`;  // never the name of the CV Claude makes
       await api(prilog, { method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: `Headhunter ${firma}: prilog`, content: await fileToB64(file) }) });
     }
@@ -974,7 +975,7 @@ $("#hh-form").addEventListener("submit", async (ev) => {
   }
   const agency = { id, firma, kontakt: $("#hh-kontakt").value.trim(), email: $("#hh-email").value.trim(),
     sajt: $("#hh-sajt").value.trim(), jezik: $("#hh-jezik").value, napomena: $("#hh-napomena").value.trim(),
-    ...(prilog ? { prilog } : {}), status: "Novo", dodato: new Date().toISOString().slice(0, 10) };
+    ...(prilog ? { prilog } : {}), status: "Novo", dodato: today() };
   const ok = await hhSave((reg) => { reg.agencies = reg.agencies || []; reg.agencies.push(agency); }, `Headhunter dodat: ${firma}`);
   btn.disabled = false;
   if (ok) { form.reset(); hhStatus(`✅ ${firma} je dodat. Klikni ✉️ Kreiraj mail kad budeš spreman.`, "ok"); }
