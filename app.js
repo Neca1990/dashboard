@@ -681,10 +681,14 @@ const HH_WAITING = "Čeka Claude";
 const HH_STATUSES = ["Novo", HH_WAITING, "Spremno", "Poslato", "Odgovorili", "Intervju", "Bez odgovora", "Odbijeno"];
 const HH_GROUP = { Novo: "wait", [HH_WAITING]: "todo", Spremno: "todo", Poslato: "sent", Odgovorili: "review",
   Intervju: "interview", "Bez odgovora": "closed", Odbijeno: "rejected" };
+// a confirmation fades after a few seconds so it never outlives what it talks about; errors stay
+let hhStatusTimer;
 function hhStatus(text, kind = "") {
   const s = $("#hh-status");
   s.textContent = text;
   s.className = kind;
+  clearTimeout(hhStatusTimer);
+  if (kind === "ok") hhStatusTimer = setTimeout(() => { s.textContent = ""; s.className = ""; }, 8000);
 }
 function hhFormFilled() {
   return ["#hh-firma", "#hh-kontakt", "#hh-email", "#hh-sajt", "#hh-napomena", "#hh-fajl"].some((id) => $(id)?.value);
@@ -777,7 +781,8 @@ function hhCard(a) {
   const remove = el("button", { type: "button", class: "danger", text: "Ukloni" });
   remove.addEventListener("click", () => {
     if (!confirm(`Ukloniti ${a.firma} sa liste?`)) return;
-    hhSave((reg) => { reg.agencies = reg.agencies.filter((x) => x.id !== a.id); }, `Headhunter uklonjen: ${a.firma}`);
+    hhSave((reg) => { reg.agencies = reg.agencies.filter((x) => x.id !== a.id); }, `Headhunter uklonjen: ${a.firma}`)
+      .then((ok) => ok && hhStatus(`🗑 ${a.firma} je uklonjen sa liste.`, "ok"));
   });
   const actions = el("div", { class: "hh-actions" }, [create]);
   if (a.prilog) actions.append(fileButton(a.prilog, "📎 Prilog"));
