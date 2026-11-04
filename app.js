@@ -755,57 +755,109 @@ function copyRow(label, text, multiline = false) {
   btn.addEventListener("click", () => copyText(text, btn));
   return el("div", { class: `hh-row${multiline ? " multi" : ""}` }, [el("span", { class: "hh-label", text: label }), value, btn]);
 }
+const FOLLOWUP_DAYS = 10;
+const HH_SECTIONS = [
+  ["U pripremi", ["Novo", HH_WAITING, "Spremno"]],
+  ["Poslato", ["Poslato", "Odgovorili", "Intervju"]],
+  ["Završeno", ["Bez odgovora", "Odbijeno"]],
+];
+const today = () => new Date().toISOString().slice(0, 10);
+function daysSince(date) {
+  return Math.floor((new Date(today()) - new Date(date.slice(0, 10))) / 86400000);
+}
+function sinceText(date) {
+  const d = daysSince(date);
+  const [y, m, day] = date.slice(0, 10).split("-");
+  return `${day}.${m}.${y}. (${d === 0 ? "danas" : d === 1 ? "juče" : `pre ${d} dana`})`;
+}
+// sent, no answer, no follow-up yet and the waiting time is up
+const followupDue = (a) => a.status === "Poslato" && a.poslato && !a.followup_poslato && !a.followup_mail &&
+  !a.followup_zatrazeno && daysSince(a.poslato) >= FOLLOWUP_DAYS;
+function hhUpdate(a, change, message, done) {
+  return hhSave((reg) => { const x = hhFind(reg, a.id); if (x) change(x); }, message).then((ok) => ok && done && hhStatus(done, "ok"));
+}
 function hhCard(a) {
   const status = el("select", { class: "status", "data-group": HH_GROUP[a.status] || "", "aria-label": "Status" },
     HH_STATUSES.map((n) => el("option", { value: n, text: n })));
   status.value = a.status || "Novo";
-  status.addEventListener("change", () => hhSave((reg) => {
-    const x = hhFind(reg, a.id);
-    if (!x) return;
+  status.addEventListener("change", () => hhUpdate(a, (x) => {
     x.status = status.value;
-    if (status.value === "Poslato") x.poslato = new Date().toISOString().slice(0, 10);
-  }, `Headhunter ${a.firma}: ${status.value}`).then((ok) => ok && hhStatus(`✅ ${a.firma}: ${status.value}.`, "ok")));
+    if (status.value === "Poslato") x.poslato = x.poslato || today();
+  }, `Headhunter ${a.firma}: ${status.value}`, `✅ ${a.firma}: ${status.value}.`));
   const contact = [a.kontakt, a.email].filter(Boolean).join(" · ");
   const site = a.sajt ? el("a", { href: a.sajt, target: "_blank", rel: "noopener noreferrer", text: "sajt" }) : null;
   const head = el("div", { class: "row-between" }, [el("h3", { text: a.firma }), status]);
   const meta = el("p", { class: "muted" }, [contact, ...(site ? [" · ", site] : []),
     ` · ${a.jezik === "en" ? "engleski" : "srpski"}`]);
   const parts = [head, meta];
+  if (a.poslato) {
+    parts.push(el("p", { class: "hh-sent", text: `📨 Poslato ${sinceText(a.poslato)}` +
+      (a.followup_poslato ? ` · follow-up ${sinceText(a.followup_poslato)}` : "") }));
+  }
   if (a.napomena) parts.push(el("p", { class: "hh-note", text: a.napomena }));
-  const create = el("button", { type: "button", text: a.mail ? "↻ Napravi ponovo" : "✉️ Kreiraj mail" });
-  create.addEventListener("click", () => hhSave((reg) => {
-    const x = hhFind(reg, a.id);
-    if (x) { x.status = HH_WAITING; x.zatrazeno = new Date().toISOString(); }
-  }, `Headhunter ${a.firma}: zatražen CV i mejl`).then((ok) => ok &&
-    hhStatus(`✅ Zatraženo za ${a.firma}. Napiši Claude-u „obradi headhuntere“.`, "ok")));
+  const sent = !HH_SECTIONS[0][1].includes(a.status);
+
+  // follow-up: reminder, request, the email itself, then "sent"
+  if (followupDue(a)) {
+    const ask = el("button", { type: "button", text: "✍️ Zatraži follow-up mejl" });
+    ask.addEventListener("click", () => hhUpdate(a, (x) => { x.followup_zatrazeno = new Date().toISOString(); },
+      `Headhunter ${a.firma}: zatražen follow-up`, `✅ Zatražen follow-up za ${a.firma}. Napiši Claude-u „obradi headhuntere“.`));
+    parts.push(el("div", { class: "hh-alert" }, [
+      el("span", { text: `⏰ Prošlo je ${daysSince(a.poslato)} dana bez odgovora – vreme za follow-up.` }), ask]));
+  } else if (a.followup_zatrazeno && !a.followup_mail) {
+    parts.push(el("p", { class: "hh-waiting", text: "⏳ Čeka da Claude napiše follow-up – napiši mu „obradi headhuntere“." }));
+  } else if (a.status === "Poslato" && a.followup_poslato && daysSince(a.followup_poslato) >= FOLLOWUP_DAYS) {
+    parts.push(el("p", { class: "hh-waiting", text: `Ni ${daysSince(a.followup_poslato)} dana posle follow-up-a nema odgovora – ` +
+      "možeš da prebaciš status na „Bez odgovora“." }));
+  }
+  if (a.followup_mail && !a.followup_poslato) {
+    const done = el("button", { type: "button", text: "✅ Poslao sam follow-up" });
+    done.addEventListener("click", () => hhUpdate(a, (x) => { x.followup_poslato = today(); },
+      `Headhunter ${a.firma}: follow-up poslat`, `✅ Follow-up za ${a.firma} je zabeležen.`));
+    parts.push(el("h4", { text: "Follow-up mejl" }), ...mailBlock(a, "followup_mail", false, [done]));
+  }
+
+  if (a.status === HH_WAITING) {
+    parts.push(el("p", { class: "hh-waiting", text: "⏳ Čeka da Claude napravi CV i mejl – napiši mu „obradi headhuntere“." }));
+  }
+  const actions = el("div", { class: "hh-actions" });
+  if (!sent) {
+    const create = el("button", { type: "button", text: a.mail ? "↻ Napravi ponovo" : "✉️ Kreiraj mail" });
+    create.addEventListener("click", () => hhUpdate(a, (x) => { x.status = HH_WAITING; x.zatrazeno = new Date().toISOString(); },
+      `Headhunter ${a.firma}: zatražen CV i mejl`, `✅ Zatraženo za ${a.firma}. Napiši Claude-u „obradi headhuntere“.`));
+    actions.append(create);
+  }
+  if (a.prilog) actions.append(fileButton(a.prilog, "📎 Prilog"));
+  if (a.cv_fajl) actions.append(fileButton(a.cv_fajl, "📄 CV"));
   const remove = el("button", { type: "button", class: "danger", text: "Ukloni" });
   remove.addEventListener("click", () => {
     if (!confirm(`Ukloniti ${a.firma} sa liste?`)) return;
     hhSave((reg) => { reg.agencies = reg.agencies.filter((x) => x.id !== a.id); }, `Headhunter uklonjen: ${a.firma}`)
       .then((ok) => { if (ok) { hhStatus(`🗑 ${a.firma} je uklonjen sa liste.`, "ok"); deleteFiles([a.cv_fajl, a.prilog]); } });
   });
-  const actions = el("div", { class: "hh-actions" }, [create]);
-  if (a.prilog) actions.append(fileButton(a.prilog, "📎 Prilog"));
-  if (a.cv_fajl) actions.append(fileButton(a.cv_fajl, "📄 CV"));
-  actions.append(remove);
-  if (a.status === HH_WAITING) {
-    parts.push(el("p", { class: "hh-waiting", text: "⏳ Čeka da Claude napravi CV i mejl – napiši mu „obradi headhuntere“." }));
-  }
-  if (a.mail && state.hhEditing === a.id) {
-    parts.push(hhEditor(a));
+  if (a.mail && sent && state.hhEditing !== `${a.id}:mail`) {
+    // once sent, the first email is kept for reference but folded away
+    parts.push(el("details", { class: "hh-sent-mail" }, [el("summary", { text: "📨 Poslati mejl" }), ...mailBlock(a, "mail", true, [])]));
   } else if (a.mail) {
-    const m = a.mail;
-    parts.push(el("div", { class: "hh-mail" }, [
+    parts.push(...mailBlock(a, "mail", true, []));
+  }
+  actions.append(remove);
+  parts.push(actions);
+  return el("div", { class: `hh-card${followupDue(a) ? " due" : ""}` }, parts);
+}
+// the email (or its editor) with copy buttons, plus its own row of buttons
+function mailBlock(a, key, withCv, extra) {
+  const m = a[key];
+  if (state.hhEditing === `${a.id}:${key}`) return [hhEditor(a, key)];
+  const edit = el("button", { type: "button", class: "ghost", text: "✏️ Izmeni tekst" });
+  edit.addEventListener("click", () => { state.hhEditing = `${a.id}:${key}`; renderHeadhunters(); });
+  return [
+    el("div", { class: "hh-mail" }, [
       copyRow("Za", m.to || a.email || ""), copyRow("Naslov", m.subject || ""), copyRow("Tekst", m.body || "", true),
       ...(m.izmenjeno ? [el("p", { class: "muted", text: `✏️ Tvoja izmena od ${m.izmenjeno}.` })] : []),
-    ]));
-    const edit = el("button", { type: "button", class: "ghost", text: "✏️ Izmeni tekst" });
-    edit.addEventListener("click", () => { state.hhEditing = a.id; renderHeadhunters(); });
-    actions.insertBefore(edit, remove);
-    actions.insertBefore(mailMenu(a), remove);
-  }
-  parts.push(actions);
-  return el("div", { class: "hh-card" }, parts);
+    ]),
+    el("div", { class: "hh-actions mail-actions" }, [...extra, mailMenu(a, m, withCv && a.cv_fajl), edit]),
+  ];
 }
 // where to write the email: web mail opens in a new tab, "Mejl aplikacija" opens the computer's default mail program;
 // none of them can attach a file, so the CV is downloaded with the same click, ready to drag in
@@ -816,22 +868,21 @@ const MAIL_APPS = [
   ["Yahoo Mail", (to, su, body) => `https://compose.mail.yahoo.com/?to=${to}&subject=${su}&body=${body}`],
   ["Mejl aplikacija na računaru (Apple Mail, Outlook…)", (to, su, body) => `mailto:${to}?subject=${su}&body=${body}`],
 ];
-function mailMenu(a) {
-  const m = a.mail;
+function mailMenu(a, m, cv) {
   const enc = (t) => encodeURIComponent(t || "");
   const items = MAIL_APPS.map(([name, url]) => {
     const link = el("a", { href: url(enc(m.to || a.email), enc(m.subject), enc(m.body)), text: name,
       ...(url("", "", "").startsWith("mailto:") ? {} : { target: "_blank", rel: "noopener noreferrer" }) });
     link.addEventListener("click", () => {
       link.closest("details").open = false;
-      if (a.cv_fajl) downloadFile(a.cv_fajl).catch(() => hhStatus("CV nije preuzet – preuzmi ga dugmetom 📄 CV.", "err"));
+      if (cv) downloadFile(cv).catch(() => hhStatus("CV nije preuzet – preuzmi ga dugmetom 📄 CV.", "err"));
     });
     return link;
   });
   return el("details", { class: "mail-menu" }, [
-    el("summary", { class: "button ghost", text: a.cv_fajl ? "📧 Otvori mejl + preuzmi CV ▾" : "📧 Otvori mejl ▾" }),
-    el("div", { class: "mail-menu-list" }, [...items,
-      el("p", { class: "muted", text: "Link ne može sam da priloži fajl: CV se preuzme u Downloads, pa ga prevuci u mejl (ili spajalica 📎)." })]),
+    el("summary", { class: "button ghost", text: cv ? "📧 Otvori mejl + preuzmi CV ▾" : "📧 Otvori mejl ▾" }),
+    el("div", { class: "mail-menu-list" }, [...items, ...(cv ? [el("p", { class: "muted",
+      text: "Link ne može sam da priloži fajl: CV se preuzme u Downloads, pa ga prevuci u mejl (ili spajalica 📎)." })] : [])]),
   ]);
 }
 // a click anywhere else closes an open mail menu
@@ -848,20 +899,19 @@ async function deleteFiles(paths) {
     } catch (_) { /* already gone */ }
   }
 }
-function hhEditor(a) {
-  const m = a.mail;
+function hhEditor(a, key) {
+  const m = a[key];
   const to = el("input", { type: "email" }); to.value = m.to || a.email || "";
   const subject = el("input", { type: "text" }); subject.value = m.subject || "";
   const body = el("textarea", { rows: "16" }); body.value = m.body || "";
   const save = el("button", { type: "button", text: "💾 Sačuvaj" });
   const cancel = el("button", { type: "button", class: "ghost", text: "Otkaži" });
   cancel.addEventListener("click", () => { state.hhEditing = null; renderHeadhunters(); });
-  save.addEventListener("click", async () => {
+  save.addEventListener("click", () => {
     const mail = { to: to.value.trim(), subject: subject.value.trim(), body: body.value.replace(/\s+$/, "") + "\n",
       izmenjeno: new Date().toLocaleDateString("sr-Latn-RS") };
     state.hhEditing = null;
-    const ok = await hhSave((reg) => { const x = hhFind(reg, a.id); if (x) x.mail = mail; }, `Headhunter ${a.firma}: mejl izmenjen`);
-    if (ok) hhStatus(`✅ Mejl za ${a.firma} je sačuvan.`, "ok");
+    hhUpdate(a, (x) => { x[key] = mail; }, `Headhunter ${a.firma}: mejl izmenjen`, `✅ Mejl za ${a.firma} je sačuvan.`);
   });
   return el("div", { class: "hh-edit" }, [
     el("label", {}, ["Za", to]), el("label", {}, ["Naslov", subject]), el("label", {}, ["Tekst", body]),
@@ -870,10 +920,25 @@ function hhEditor(a) {
 }
 function renderHeadhunters() {
   const list = $("#hh-list");
-  const order = (a) => HH_STATUSES.indexOf(a.status);
-  const items = [...(state.hh.agencies || [])].sort((a, b) => order(a) - order(b) || String(a.firma).localeCompare(String(b.firma)));
-  list.replaceChildren(...items.map(hhCard));
-  if (!items.length) list.append(el("p", { class: "muted", text: "Još nema agencija – dodaj prvu ispod." }));
+  const agencies = state.hh.agencies || [];
+  // in each section: what needs doing first, then the oldest sent, then by name
+  const rank = (a) => (followupDue(a) ? 0 : a.followup_mail && !a.followup_poslato ? 1 : 2);
+  const order = (a, b) => rank(a) - rank(b) || String(a.poslato || "~").localeCompare(String(b.poslato || "~")) ||
+    String(a.firma).localeCompare(String(b.firma));
+  const known = HH_SECTIONS.flatMap(([, s]) => s);
+  const sections = HH_SECTIONS.map(([title, statuses], i) => {
+    const items = agencies.filter((a) => statuses.includes(a.status) || (i === 0 && !known.includes(a.status))).sort(order);
+    if (!items.length) return null;
+    const due = items.filter(followupDue).length;
+    const label = `${title} (${items.length})${due ? ` · ⏰ ${due} za follow-up` : ""}`;
+    if (i < 2) return el("div", { class: "hh-section" }, [el("h3", { class: "hh-section-title", text: label }), ...items.map(hhCard)]);
+    const box = el("details", { class: "hh-section" }, [el("summary", { class: "hh-section-title", text: label }), ...items.map(hhCard)]);
+    box.open = !!state.hhDoneOpen;
+    box.addEventListener("toggle", () => { state.hhDoneOpen = box.open; });
+    return box;
+  }).filter(Boolean);
+  list.replaceChildren(...sections);
+  if (!agencies.length) list.append(el("p", { class: "muted", text: "Još nema agencija – dodaj prvu ispod." }));
 }
 function safeName(name) {
   return name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9.]+/g, "_").replace(/^_+|_+$/g, "") || "prilog";
