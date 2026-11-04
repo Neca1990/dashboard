@@ -595,7 +595,8 @@ async function changed(path) {
   return !first;
 }
 function editing() {
-  return state.configDirty || state.profileDirty || state.companiesDirty || hhFormFilled() || !!state.hhEditing || $("#preview").open;
+  return state.configDirty || state.profileDirty || state.companiesDirty || hhFormFilled() || !!state.hhEditing || $("#preview").open ||
+    Object.values(state.hhDrafts || {}).some((d) => d.file || d.napomena !== d.saved);
 }
 async function refreshData() {
   if (document.visibilityState !== "visible") return;
@@ -678,9 +679,19 @@ function startLiveUpdates() {
 // Agencies live in data/headhunters.json; "Kreiraj mail" marks one as waiting and Claude (on the Mac) writes the
 // tailored CV and email with `python -m jobhunter.headhunters ready`, which this tab then shows with copy buttons.
 const HH_WAITING = "Čeka Claude";
-const HH_STATUSES = ["Novo", HH_WAITING, "Spremno", "Poslato", "Odgovorili", "Intervju", "Bez odgovora", "Odbijeno"];
-const HH_GROUP = { Novo: "wait", [HH_WAITING]: "todo", Spremno: "todo", Poslato: "sent", Odgovorili: "review",
-  Intervju: "interview", "Bez odgovora": "closed", Odbijeno: "rejected" };
+const HH_PREP = ["Novo", HH_WAITING, "Spremno"];
+const HH_SENT = ["Poslato", "Odgovorili", "Intervju"];
+const HH_DONE = ["Bez odgovora", "Odbijeno"];
+const HH_STATUSES = ["Predlog", ...HH_PREP, ...HH_SENT, ...HH_DONE, "Odbačeno"];
+const HH_GROUP = { Predlog: "review", Novo: "wait", [HH_WAITING]: "todo", Spremno: "todo", Poslato: "sent", Odgovorili: "review",
+  Intervju: "interview", "Bez odgovora": "closed", Odbijeno: "rejected", "Odbačeno": "closed" };
+// agencies Claude researched and suggests; what kind they are and how much he recommends them
+const HH_TYPES = { it_agencija_rs: "🇷🇸 IT agencija", velika_agencija: "🏢 Velika agencija", platforma_remote: "🌍 Platforma (remote)" };
+const HH_ADVICE = { da: "✅ Preporuka: da", mozda: "🤔 Preporuka: možda", ne: "❌ Preporuka: ne" };
+const HH_APPLY = { email: "mejlom", forma: "preko forme na sajtu", email_i_forma: "mejlom ili preko forme na sajtu",
+  platforma: "registracijom na platformi (test i intervju), ne mejlom" };
+// platforms take no email: Claude prepares only the CV for their signup
+const viaSite = (a) => a.nacin_prijave === "platforma" || (a.nacin_prijave === "forma" && !a.email);
 // a confirmation fades after a few seconds so it never outlives what it talks about; errors stay
 let hhStatusTimer;
 function hhStatus(text, kind = "") {
@@ -756,10 +767,13 @@ function copyRow(label, text, multiline = false) {
   return el("div", { class: `hh-row${multiline ? " multi" : ""}` }, [el("span", { class: "hh-label", text: label }), value, btn]);
 }
 const FOLLOWUP_DAYS = 10;
+// [title, statuses, folded]
 const HH_SECTIONS = [
-  ["U pripremi", ["Novo", HH_WAITING, "Spremno"]],
-  ["Poslato", ["Poslato", "Odgovorili", "Intervju"]],
-  ["Završeno", ["Bez odgovora", "Odbijeno"]],
+  ["Predlozi", ["Predlog"], false],
+  ["U pripremi", HH_PREP, false],
+  ["Poslato", HH_SENT, false],
+  ["Završeno", HH_DONE, true],
+  ["Odbačeni", ["Odbačeno"], true],
 ];
 // local date, so an agency added after midnight is not dated the day before
 const today = () => new Date().toLocaleDateString("sv-SE");
@@ -775,7 +789,91 @@ function sinceText(date) {
 const followupDue = (a) => a.status === "Poslato" && a.poslato && !a.followup_poslato && !a.followup_mail &&
   !a.followup_zatrazeno && daysSince(a.poslato) >= FOLLOWUP_DAYS;
 function hhUpdate(a, change, message, done) {
-  return hhSave((reg) => { const x = hhFind(reg, a.id); if (x) change(x); }, message).then((ok) => ok && done && hhStatus(done, "ok"));
+  return hhSave((reg) => { const x = hhFind(reg, a.id); if (x) change(x); }, message)
+    .then((ok) => { if (ok && done) hhStatus(done, "ok"); return ok; });
+}
+function hhSummary(a) {
+  const line = (label, text) => (text ? el("p", {}, [el("strong", { text: `${label}: ` }), text]) : null);
+  const sources = (a.izvori || []).map((u, i) => el("a", { href: u, target: "_blank", rel: "noopener noreferrer",
+    text: (() => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (_) { return `izvor ${i + 1}`; } })() }));
+  return el("div", { class: "hh-summary" }, [
+    el("div", { class: "hh-badges" }, [
+      ...(HH_TYPES[a.tip] ? [el("span", { class: "chip", text: HH_TYPES[a.tip] })] : []),
+      ...(HH_ADVICE[a.preporuka] ? [el("span", { class: `chip advice-${a.preporuka}`, text: HH_ADVICE[a.preporuka] })] : []),
+    ]),
+    ...[line("Šta rade", a.sta_rade), line("Za tebe", a.odgovara), line("Pouzdanost", a.pouzdanost),
+      line("Zašto", a.zasto), line("Prijava", HH_APPLY[a.nacin_prijave])].filter(Boolean),
+    ...(sources.length ? [el("p", { class: "muted" }, ["Izvori: ", ...sources.flatMap((x, i) => (i ? [" · ", x] : [x])),
+      ...(a.provereno ? [` · provereno ${sinceText(a.provereno)}`] : [])])] : []),
+  ]);
+}
+function suggestionActions(a) {
+  const box = el("div", { class: "hh-actions" });
+  if (a.status === "Predlog") {
+    const yes = el("button", { type: "button", text: "➕ Hoću da im pišem" });
+    yes.addEventListener("click", () => hhUpdate(a, (x) => { x.status = "Novo"; x.dodato = today(); }, `Headhunter ${a.firma}: izabran`,
+      `✅ ${a.firma} je u „U pripremi“. Okači CV (ako hoćeš), dodaj napomenu i klikni ${viaSite(a) ? "📄 Pripremi CV" : "✉️ Kreiraj mail"}.`));
+    const no = el("button", { type: "button", class: "ghost", text: "🚫 Ne zanima me" });
+    no.addEventListener("click", () => hhUpdate(a, (x) => { x.status = "Odbačeno"; }, `Headhunter ${a.firma}: odbačen`,
+      `${a.firma} je premešten u Odbačene.`));
+    box.append(yes, no);
+  } else {
+    const back = el("button", { type: "button", class: "ghost", text: "↩ Vrati u predloge" });
+    back.addEventListener("click", () => hhUpdate(a, (x) => { x.status = "Predlog"; }, `Headhunter ${a.firma}: vraćen u predloge`,
+      `✅ ${a.firma} je vraćen u Predloge.`));
+    box.append(back);
+  }
+  if (a.sajt) box.append(el("a", { class: "button ghost", href: a.sajt, target: "_blank", rel: "noopener noreferrer", text: "🌐 Sajt" }));
+  return box;
+}
+// what is typed on a card survives the tab redrawing itself every few seconds
+function draft(a) {
+  state.hhDrafts = state.hhDrafts || {};
+  return (state.hhDrafts[a.id] = state.hhDrafts[a.id] || { napomena: a.napomena || "", saved: a.napomena || "", file: null });
+}
+function prepForm(a) {
+  const d = draft(a);
+  const note = el("textarea", { rows: "3", placeholder: "npr. istakni mobilno testiranje, traži samo remote, preporuka od …" });
+  note.value = d.napomena;
+  note.addEventListener("input", () => { d.napomena = note.value; });
+  const file = el("input", { type: "file", accept: ".pdf,.doc,.docx,.txt,.html" });
+  file.addEventListener("change", () => { d.file = file.files[0] || null; });
+  const chosen = d.file ? el("span", { class: "muted", text: `izabran: ${d.file.name}` }) : null;
+  return el("div", { class: "hh-prep" }, [
+    el("label", {}, ["Napomena za Claude-a", note]),
+    el("label", {}, [a.prilog ? "CV od kog da krenem (već okačen – izaberi novi da ga zameniš)"
+      : "CV od kog da krenem (opciono – bez njega koristim tvoj opšti CV)", file, ...(chosen ? [chosen] : [])]),
+  ]);
+}
+// saves what was typed and uploaded on the card, then marks the agency as waiting for Claude
+async function requestMail(a, btn) {
+  const d = a.status === "Novo" ? draft(a) : null;
+  if (d?.file && d.file.size > 10 * 1024 * 1024) return hhStatus("Fajl je veći od 10 MB.", "err");
+  btn.disabled = true;
+  let prilog = a.prilog || "";
+  if (d?.file) {
+    hhStatus("Otpremam CV…");
+    const path = `data/headhunters/${a.id}/prilog_${safeName(d.file.name)}`;
+    try {
+      let sha;
+      try { sha = (await (await api(path)).json()).sha; } catch (_) { /* new file */ }
+      await api(path, { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: `Headhunter ${a.firma}: prilog`, content: await fileToB64(d.file), ...(sha ? { sha } : {}) }) });
+      if (a.prilog && a.prilog !== path) deleteFiles([a.prilog]);
+      prilog = path;
+    } catch (_) {
+      btn.disabled = false;
+      return hhStatus("Otpremanje CV-a nije uspelo. Pokušaj ponovo.", "err");
+    }
+  }
+  const ok = await hhUpdate(a, (x) => {
+    if (d) x.napomena = d.napomena.trim();
+    if (prilog) x.prilog = prilog;
+    x.status = HH_WAITING; x.zatrazeno = new Date().toISOString();
+  }, `Headhunter ${a.firma}: zatražen ${viaSite(a) ? "CV" : "CV i mejl"}`,
+  `✅ Zatraženo za ${a.firma}. Napiši Claude-u „obradi headhuntere“.`);
+  btn.disabled = false;
+  if (ok && state.hhDrafts) delete state.hhDrafts[a.id];
 }
 function hhCard(a) {
   const status = el("select", { class: "status", "data-group": HH_GROUP[a.status] || "", "aria-label": "Status" },
@@ -788,15 +886,21 @@ function hhCard(a) {
   const contact = [a.kontakt, a.email].filter(Boolean).join(" · ");
   const site = a.sajt ? el("a", { href: a.sajt, target: "_blank", rel: "noopener noreferrer", text: "sajt" }) : null;
   const head = el("div", { class: "row-between" }, [el("h3", { text: a.firma }), status]);
-  const meta = el("p", { class: "muted" }, [contact, ...(site ? [" · ", site] : []),
-    ` · ${a.jezik === "en" ? "engleski" : "srpski"}`]);
+  const bits = [contact, site, a.jezik === "en" ? "engleski" : "srpski"].filter(Boolean);
+  const meta = el("p", { class: "muted" }, bits.flatMap((b, i) => (i ? [" · ", b] : [b])));
   const parts = [head, meta];
   if (a.poslato) {
     parts.push(el("p", { class: "hh-sent", text: `📨 Poslato ${sinceText(a.poslato)}` +
       (a.followup_poslato ? ` · follow-up ${sinceText(a.followup_poslato)}` : "") }));
   }
-  if (a.napomena) parts.push(el("p", { class: "hh-note", text: a.napomena }));
-  const sent = !HH_SECTIONS[0][1].includes(a.status);
+  if (a.sta_rade) {
+    const info = hhSummary(a);
+    parts.push(a.status === "Predlog" ? info : el("details", { class: "hh-about" }, [el("summary", { text: "ℹ️ O agenciji" }), info]));
+  }
+  if (a.status === "Predlog" || a.status === "Odbačeno") return el("div", { class: "hh-card" }, [...parts, suggestionActions(a)]);
+  const sent = !HH_PREP.includes(a.status);
+  if (a.status === "Novo") parts.push(prepForm(a));
+  else if (a.napomena) parts.push(el("p", { class: "hh-note", text: a.napomena }));
 
   // follow-up: reminder, request, the email itself, then "sent"
   if (followupDue(a)) {
@@ -819,17 +923,23 @@ function hhCard(a) {
   }
 
   if (a.status === HH_WAITING) {
+    const what = viaSite(a) ? "CV" : "CV i mejl";
     parts.push(el("p", { class: "hh-waiting", text: a.izmena
-      ? "⏳ Čeka da Claude ispravi CV i mejl po tvojoj zameri – napiši mu „obradi headhuntere“."
-      : "⏳ Čeka da Claude napravi CV i mejl – napiši mu „obradi headhuntere“." }));
+      ? `⏳ Čeka da Claude ispravi ${what} po tvojoj zameri – napiši mu „obradi headhuntere“.`
+      : `⏳ Čeka da Claude napravi ${what} – napiši mu „obradi headhuntere“.` }));
   }
   if (a.izmena) parts.push(el("p", { class: "hh-note", text: `💬 Tvoja zamerka: ${a.izmena}` }));
   const actions = el("div", { class: "hh-actions" });
   if (!sent) {
-    const create = el("button", { type: "button", text: a.mail ? "↻ Napravi ponovo" : "✉️ Kreiraj mail" });
-    create.addEventListener("click", () => hhUpdate(a, (x) => { x.status = HH_WAITING; x.zatrazeno = new Date().toISOString(); },
-      `Headhunter ${a.firma}: zatražen CV i mejl`, `✅ Zatraženo za ${a.firma}. Napiši Claude-u „obradi headhuntere“.`));
+    const label = viaSite(a) ? (a.cv_fajl ? "↻ Napravi CV ponovo" : "📄 Pripremi CV za prijavu")
+      : a.mail ? "↻ Napravi ponovo" : "✉️ Kreiraj mail";
+    const create = el("button", { type: "button", text: label });
+    create.addEventListener("click", () => requestMail(a, create));
     actions.append(create);
+  }
+  if (a.prijava_link && (viaSite(a) || a.nacin_prijave !== "email")) {
+    actions.append(el("a", { class: "button ghost", href: a.prijava_link, target: "_blank", rel: "noopener noreferrer",
+      text: "🔗 Prijava na sajtu" }));
   }
   if (a.prilog && !a.cv_fajl) actions.append(fileButton(a.prilog, "📎 Prilog"));  // only until the CV is made from it
   if (a.cv_fajl) {
@@ -901,7 +1011,7 @@ async function previewCv(a) {
   previewAgency = a;
   $("#preview-title").textContent = `CV – ${a.firma}`;
   $("#preview-text").value = "";
-  $("#preview-form").classList.toggle("hidden", HH_SECTIONS[1][1].concat(HH_SECTIONS[2][1]).includes(a.status));
+  $("#preview-form").classList.toggle("hidden", !HH_PREP.includes(a.status));
   try {
     const res = await api(a.cv_fajl, { headers: { Accept: "application/vnd.github.raw+json" } });
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -960,20 +1070,24 @@ function hhEditor(a, key) {
 function renderHeadhunters() {
   const list = $("#hh-list");
   const agencies = state.hh.agencies || [];
-  // in each section: what needs doing first, then the oldest sent, then by name
+  // in each section: what needs doing first, then the strongest suggestion / oldest sent, then by name
   const rank = (a) => (followupDue(a) ? 0 : a.followup_mail && !a.followup_poslato ? 1 : 2);
-  const order = (a, b) => rank(a) - rank(b) || String(a.poslato || "~").localeCompare(String(b.poslato || "~")) ||
-    String(a.firma).localeCompare(String(b.firma));
-  const known = HH_SECTIONS.flatMap(([, s]) => s);
-  const sections = HH_SECTIONS.map(([title, statuses], i) => {
-    const items = agencies.filter((a) => statuses.includes(a.status) || (i === 0 && !known.includes(a.status))).sort(order);
+  const advice = (a) => ({ da: 0, mozda: 1, ne: 2 }[a.preporuka] ?? 1);
+  const home = (a) => (a.tip === "platforma_remote" ? 1 : 0);  // Serbian agencies before the global platforms
+  const order = (a, b) => rank(a) - rank(b) || advice(a) - advice(b) || home(a) - home(b) ||
+    String(a.poslato || "~").localeCompare(String(b.poslato || "~")) || String(a.firma).localeCompare(String(b.firma));
+  state.hhOpen = state.hhOpen || {};
+  const sections = HH_SECTIONS.map(([title, statuses, folded]) => {
+    // an unknown status lands in "U pripremi" rather than disappearing
+    const items = agencies.filter((a) => statuses.includes(a.status) ||
+      (title === "U pripremi" && !HH_STATUSES.includes(a.status))).sort(order);
     if (!items.length) return null;
     const due = items.filter(followupDue).length;
     const label = `${title} (${items.length})${due ? ` · ⏰ ${due} za follow-up` : ""}`;
-    if (i < 2) return el("div", { class: "hh-section" }, [el("h3", { class: "hh-section-title", text: label }), ...items.map(hhCard)]);
+    if (!folded) return el("div", { class: "hh-section" }, [el("h3", { class: "hh-section-title", text: label }), ...items.map(hhCard)]);
     const box = el("details", { class: "hh-section" }, [el("summary", { class: "hh-section-title", text: label }), ...items.map(hhCard)]);
-    box.open = !!state.hhDoneOpen;
-    box.addEventListener("toggle", () => { state.hhDoneOpen = box.open; });
+    box.open = !!state.hhOpen[title];
+    box.addEventListener("toggle", () => { state.hhOpen[title] = box.open; });
     return box;
   }).filter(Boolean);
   list.replaceChildren(...sections);
