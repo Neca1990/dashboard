@@ -174,3 +174,10 @@ details.hh-section > summary { cursor: pointer; }
 .mail-actions { margin-bottom: 12px; }
 .hh-sent-mail { margin: 0 0 10px; }
 .hh-sent-mail > summary { cursor: pointer; color: var(--accent); font-size: .9rem; }
+.preview { width: min(920px, calc(100vw - 32px)); height: calc(100vh - 48px); padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--card); color: var(--text); }
+.preview[open] { display: flex; flex-direction: column; }
+.preview::backdrop { background: rgba(0, 0, 0, .55); }
+.preview-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.preview iframe { flex: 1; width: 100%; border: 0; background: #525659; }
+.preview-feedback { padding: 10px 14px; border-top: 1px solid var(--border); }
+.preview-feedback label { margin-bottom: 8px; }

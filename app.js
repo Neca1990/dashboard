@@ -595,7 +595,7 @@ async function changed(path) {
   return !first;
 }
 function editing() {
-  return state.configDirty || state.profileDirty || state.companiesDirty || hhFormFilled() || !!state.hhEditing;
+  return state.configDirty || state.profileDirty || state.companiesDirty || hhFormFilled() || !!state.hhEditing || $("#preview").open;
 }
 async function refreshData() {
   if (document.visibilityState !== "visible") return;
@@ -819,8 +819,11 @@ function hhCard(a) {
   }
 
   if (a.status === HH_WAITING) {
-    parts.push(el("p", { class: "hh-waiting", text: "⏳ Čeka da Claude napravi CV i mejl – napiši mu „obradi headhuntere“." }));
+    parts.push(el("p", { class: "hh-waiting", text: a.izmena
+      ? "⏳ Čeka da Claude ispravi CV i mejl po tvojoj zameri – napiši mu „obradi headhuntere“."
+      : "⏳ Čeka da Claude napravi CV i mejl – napiši mu „obradi headhuntere“." }));
   }
+  if (a.izmena) parts.push(el("p", { class: "hh-note", text: `💬 Tvoja zamerka: ${a.izmena}` }));
   const actions = el("div", { class: "hh-actions" });
   if (!sent) {
     const create = el("button", { type: "button", text: a.mail ? "↻ Napravi ponovo" : "✉️ Kreiraj mail" });
@@ -829,7 +832,11 @@ function hhCard(a) {
     actions.append(create);
   }
   if (a.prilog && !a.cv_fajl) actions.append(fileButton(a.prilog, "📎 Prilog"));  // only until the CV is made from it
-  if (a.cv_fajl) actions.append(fileButton(a.cv_fajl, "📄 CV"));
+  if (a.cv_fajl) {
+    const look = el("button", { type: "button", class: "ghost", text: "👁 Pregledaj CV" });
+    look.addEventListener("click", () => previewCv(a));
+    actions.append(look, fileButton(a.cv_fajl, "📄 CV"));
+  }
   const remove = el("button", { type: "button", class: "danger", text: "Ukloni" });
   remove.addEventListener("click", () => {
     if (!confirm(`Ukloniti ${a.firma} sa liste?`)) return;
@@ -886,6 +893,37 @@ function mailMenu(a, m, cv) {
       text: "Link ne može sam da priloži fajl: CV se preuzme u Downloads, pa ga prevuci u mejl (ili spajalica 📎)." })] : [])]),
   ]);
 }
+// the CV opens on the page (the browser's own PDF viewer), with a box to tell Claude what to change
+let previewUrl = "";
+let previewAgency = null;
+async function previewCv(a) {
+  const dlg = $("#preview");
+  previewAgency = a;
+  $("#preview-title").textContent = `CV – ${a.firma}`;
+  $("#preview-text").value = "";
+  $("#preview-form").classList.toggle("hidden", HH_SECTIONS[1][1].concat(HH_SECTIONS[2][1]).includes(a.status));
+  try {
+    const res = await api(a.cv_fajl, { headers: { Accept: "application/vnd.github.raw+json" } });
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "application/pdf" }));
+  } catch (_) {
+    return hhStatus("CV nije mogao da se učita. Pokušaj ponovo.", "err");
+  }
+  $("#preview-frame").src = previewUrl;
+  $("#preview-open").href = previewUrl;
+  dlg.showModal();
+}
+$("#preview-close").addEventListener("click", () => $("#preview").close());
+$("#preview").addEventListener("click", (ev) => { if (ev.target.id === "preview") ev.target.close(); });  // click outside
+$("#preview-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const a = previewAgency;
+  const text = $("#preview-text").value.trim();
+  if (!a || !text) return;
+  $("#preview").close();
+  hhUpdate(a, (x) => { x.izmena = text; x.status = HH_WAITING; x.zatrazeno = new Date().toISOString(); },
+    `Headhunter ${a.firma}: zatražena izmena`, `✅ Zamerka za ${a.firma} je zapisana. Napiši Claude-u „obradi headhuntere“.`);
+});
 // a click anywhere else closes an open mail menu
 document.addEventListener("click", (ev) => {
   document.querySelectorAll(".mail-menu[open]").forEach((d) => { if (!d.contains(ev.target)) d.open = false; });

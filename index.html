@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>Dashboard</title>
-  <link rel="stylesheet" href="style.css?v=20261105g">
+  <link rel="stylesheet" href="style.css?v=20261105h">
 </head>
 <body>
   <div id="loader" class="loader" role="status" aria-live="polite">
@@ -182,6 +182,25 @@
       </div>
     </section>
   </div>
-  <script src="app.js?v=20261105g"></script>
+  <dialog id="preview" class="preview" aria-labelledby="preview-title">
+    <div class="preview-head">
+      <strong id="preview-title">CV</strong>
+      <div class="hh-actions">
+        <a id="preview-open" class="button ghost" target="_blank" rel="noopener noreferrer">↗ Otvori u novom tabu</a>
+        <button id="preview-close" type="button" class="ghost">✕ Zatvori</button>
+      </div>
+    </div>
+    <iframe id="preview-frame" title="Pregled CV-a"></iframe>
+    <form id="preview-form" class="preview-feedback">
+      <label>Imaš zamerku? Napiši šta da izmenim u CV-u ili mejlu
+        <textarea id="preview-text" rows="3" required placeholder="npr. izbaci bankarski deo, istakni mobilno testiranje, skrati uvod u mejlu…"></textarea>
+      </label>
+      <div class="hh-actions">
+        <button type="submit">💬 Pošalji Claude-u</button>
+        <span class="muted">Posle toga mi napiši „obradi headhuntere“.</span>
+      </div>
+    </form>
+  </dialog>
+  <script src="app.js?v=20261105h"></script>
 </body>
 </html>
