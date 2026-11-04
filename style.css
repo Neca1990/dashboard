@@ -153,3 +153,4 @@ a.button.ghost { color: var(--accent); background: transparent; }
   .hh-row { grid-template-columns: 1fr auto; }
   .hh-row .hh-label { grid-column: 1 / -1; }
 }
+.hh-hint { flex-basis: 100%; margin: 0; }

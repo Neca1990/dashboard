@@ -793,8 +793,14 @@ function hhCard(a) {
     ]));
     const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(m.to || a.email || "")}` +
       `&su=${encodeURIComponent(m.subject || "")}&body=${encodeURIComponent(m.body || "")}`;
-    actions.insertBefore(el("a", { class: "button ghost", href: gmail, target: "_blank", rel: "noopener noreferrer",
-      text: "📧 Otvori u Gmail-u" }), remove);
+    // a compose link can't carry a file, so the CV is downloaded alongside it, ready to drag into the email
+    const open = el("a", { class: "button ghost", href: gmail, target: "_blank", rel: "noopener noreferrer",
+      text: a.cv_fajl ? "📧 Otvori u Gmail-u + preuzmi CV" : "📧 Otvori u Gmail-u" });
+    if (a.cv_fajl) open.addEventListener("click", () => downloadFile(a.cv_fajl).catch(() =>
+      hhStatus("CV nije preuzet – preuzmi ga dugmetom 📄 CV.", "err")));
+    actions.insertBefore(open, remove);
+    actions.append(el("p", { class: "muted hh-hint",
+      text: "Gmail link ne može sam da priloži fajl: CV se preuzme u Downloads, pa ga prevuci u mejl (ili spajalica 📎)." }));
   }
   parts.push(actions);
   return el("div", { class: "hh-card" }, parts);
@@ -911,19 +917,22 @@ async function setStatus(id, value) {
     }
   }
 }
+async function downloadFile(path) {
+  const res = await api(path, { headers: { Accept: "application/vnd.github.raw+json" } });
+  const url = URL.createObjectURL(await res.blob());
+  const a = el("a", { href: url, download: path.split("/").pop() });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
 // files live in the private repo, so they are fetched with the token and handed to the browser as a download
 function fileButton(path, label) {
   const btn = el("button", { class: "ghost file", type: "button", text: label, title: path.split("/").pop() });
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     try {
-      const res = await api(path, { headers: { Accept: "application/vnd.github.raw+json" } });
-      const url = URL.createObjectURL(await res.blob());
-      const a = el("a", { href: url, download: path.split("/").pop() });
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      await downloadFile(path);
     } catch (e) {
       recordsStatus(e.status === 404 ? "Fajl više ne postoji (prijava je možda arhivirana)." : "Preuzimanje nije uspelo.", "err");
     } finally {
