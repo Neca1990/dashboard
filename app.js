@@ -828,7 +828,7 @@ function hhCard(a) {
       `Headhunter ${a.firma}: zatražen CV i mejl`, `✅ Zatraženo za ${a.firma}. Napiši Claude-u „obradi headhuntere“.`));
     actions.append(create);
   }
-  if (a.prilog) actions.append(fileButton(a.prilog, "📎 Prilog"));
+  if (a.prilog && !a.cv_fajl) actions.append(fileButton(a.prilog, "📎 Prilog"));  // only until the CV is made from it
   if (a.cv_fajl) actions.append(fileButton(a.cv_fajl, "📄 CV"));
   const remove = el("button", { type: "button", class: "danger", text: "Ukloni" });
   remove.addEventListener("click", () => {
