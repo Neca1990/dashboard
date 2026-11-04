@@ -19,7 +19,7 @@ const state = { taxonomy: null, sources: null, config: null, sha: null, records:
   sort: { key: "date", asc: false },
   companies: null, companiesSha: null, companiesDirty: false,
   profile: null, profileSha: null, profileDirty: false, languages: null,
-  hh: { agencies: [] }, hhSha: null };
+  hh: { agencies: [] }, hhSha: null, hhEditing: null };
 // status → color group; groups in ARCHIVED move the record to the archive tab
 const STATUSES = [
   ["Čeka odobrenje", "wait"], ["Odobreno – čeka CV", "todo"], ["Odobreno – CV spreman", "todo"], ["Poslato", "sent"],
@@ -595,7 +595,7 @@ async function changed(path) {
   return !first;
 }
 function editing() {
-  return state.configDirty || state.profileDirty || state.companiesDirty || hhFormFilled();
+  return state.configDirty || state.profileDirty || state.companiesDirty || hhFormFilled() || !!state.hhEditing;
 }
 async function refreshData() {
   if (document.visibilityState !== "visible") return;
@@ -698,7 +698,7 @@ async function loadHeadhunters() {
     state.hh = { agencies: [] }; state.hhSha = null;
   }
   // a mail text being selected or a status menu that is open must not be rebuilt under the cursor
-  if (!document.activeElement?.closest?.("#hh-list")) renderHeadhunters();
+  if (!state.hhEditing && !document.activeElement?.closest?.("#hh-list")) renderHeadhunters();
 }
 // writes the change; if something else saved meanwhile, takes that version and applies the change again
 async function hhSave(change, message) {
@@ -786,24 +786,72 @@ function hhCard(a) {
   if (a.status === HH_WAITING) {
     parts.push(el("p", { class: "hh-waiting", text: "⏳ Čeka da Claude napravi CV i mejl – napiši mu „obradi headhuntere“." }));
   }
-  if (a.mail) {
+  if (a.mail && state.hhEditing === a.id) {
+    parts.push(hhEditor(a));
+  } else if (a.mail) {
     const m = a.mail;
     parts.push(el("div", { class: "hh-mail" }, [
       copyRow("Za", m.to || a.email || ""), copyRow("Naslov", m.subject || ""), copyRow("Tekst", m.body || "", true),
+      ...(m.izmenjeno ? [el("p", { class: "muted", text: `✏️ Tvoja izmena od ${m.izmenjeno}.` })] : []),
     ]));
-    const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(m.to || a.email || "")}` +
-      `&su=${encodeURIComponent(m.subject || "")}&body=${encodeURIComponent(m.body || "")}`;
-    // a compose link can't carry a file, so the CV is downloaded alongside it, ready to drag into the email
-    const open = el("a", { class: "button ghost", href: gmail, target: "_blank", rel: "noopener noreferrer",
-      text: a.cv_fajl ? "📧 Otvori u Gmail-u + preuzmi CV" : "📧 Otvori u Gmail-u" });
-    if (a.cv_fajl) open.addEventListener("click", () => downloadFile(a.cv_fajl).catch(() =>
-      hhStatus("CV nije preuzet – preuzmi ga dugmetom 📄 CV.", "err")));
-    actions.insertBefore(open, remove);
-    actions.append(el("p", { class: "muted hh-hint",
-      text: "Gmail link ne može sam da priloži fajl: CV se preuzme u Downloads, pa ga prevuci u mejl (ili spajalica 📎)." }));
+    const edit = el("button", { type: "button", class: "ghost", text: "✏️ Izmeni tekst" });
+    edit.addEventListener("click", () => { state.hhEditing = a.id; renderHeadhunters(); });
+    actions.insertBefore(edit, remove);
+    actions.insertBefore(mailMenu(a), remove);
   }
   parts.push(actions);
   return el("div", { class: "hh-card" }, parts);
+}
+// where to write the email: web mail opens in a new tab, "Mejl aplikacija" opens the computer's default mail program;
+// none of them can attach a file, so the CV is downloaded with the same click, ready to drag in
+const MAIL_APPS = [
+  ["Gmail", (to, su, body) => `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${su}&body=${body}`],
+  ["Outlook (lični: outlook.com, hotmail)", (to, su, body) => `https://outlook.live.com/mail/0/deeplink/compose?to=${to}&subject=${su}&body=${body}`],
+  ["Outlook (poslovni: Microsoft 365)", (to, su, body) => `https://outlook.office.com/mail/deeplink/compose?to=${to}&subject=${su}&body=${body}`],
+  ["Yahoo Mail", (to, su, body) => `https://compose.mail.yahoo.com/?to=${to}&subject=${su}&body=${body}`],
+  ["Mejl aplikacija na računaru (Apple Mail, Outlook…)", (to, su, body) => `mailto:${to}?subject=${su}&body=${body}`],
+];
+function mailMenu(a) {
+  const m = a.mail;
+  const enc = (t) => encodeURIComponent(t || "");
+  const items = MAIL_APPS.map(([name, url]) => {
+    const link = el("a", { href: url(enc(m.to || a.email), enc(m.subject), enc(m.body)), text: name,
+      ...(url("", "", "").startsWith("mailto:") ? {} : { target: "_blank", rel: "noopener noreferrer" }) });
+    link.addEventListener("click", () => {
+      link.closest("details").open = false;
+      if (a.cv_fajl) downloadFile(a.cv_fajl).catch(() => hhStatus("CV nije preuzet – preuzmi ga dugmetom 📄 CV.", "err"));
+    });
+    return link;
+  });
+  return el("details", { class: "mail-menu" }, [
+    el("summary", { class: "button ghost", text: a.cv_fajl ? "📧 Otvori mejl + preuzmi CV ▾" : "📧 Otvori mejl ▾" }),
+    el("div", { class: "mail-menu-list" }, [...items,
+      el("p", { class: "muted", text: "Link ne može sam da priloži fajl: CV se preuzme u Downloads, pa ga prevuci u mejl (ili spajalica 📎)." })]),
+  ]);
+}
+// a click anywhere else closes an open mail menu
+document.addEventListener("click", (ev) => {
+  document.querySelectorAll(".mail-menu[open]").forEach((d) => { if (!d.contains(ev.target)) d.open = false; });
+});
+function hhEditor(a) {
+  const m = a.mail;
+  const to = el("input", { type: "email" }); to.value = m.to || a.email || "";
+  const subject = el("input", { type: "text" }); subject.value = m.subject || "";
+  const body = el("textarea", { rows: "16" }); body.value = m.body || "";
+  const save = el("button", { type: "button", text: "💾 Sačuvaj" });
+  const cancel = el("button", { type: "button", class: "ghost", text: "Otkaži" });
+  cancel.addEventListener("click", () => { state.hhEditing = null; renderHeadhunters(); });
+  save.addEventListener("click", async () => {
+    const mail = { to: to.value.trim(), subject: subject.value.trim(), body: body.value.replace(/\s+$/, "") + "\n",
+      izmenjeno: new Date().toLocaleDateString("sr-Latn-RS") };
+    state.hhEditing = null;
+    const ok = await hhSave((reg) => { const x = hhFind(reg, a.id); if (x) x.mail = mail; }, `Headhunter ${a.firma}: mejl izmenjen`);
+    if (ok) hhStatus(`✅ Mejl za ${a.firma} je sačuvan.`, "ok");
+  });
+  return el("div", { class: "hh-edit" }, [
+    el("label", {}, ["Za", to]), el("label", {}, ["Naslov", subject]), el("label", {}, ["Tekst", body]),
+    el("div", { class: "hh-actions" }, [save, cancel]),
+  ]);
 }
 function renderHeadhunters() {
   const list = $("#hh-list");

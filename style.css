@@ -127,8 +127,8 @@ td.note { min-width: 220px; }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
 
 textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; resize: vertical; }
-a.button { display: inline-block; text-decoration: none; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--accent); }
-a.button.ghost { color: var(--accent); background: transparent; }
+.button { display: inline-block; font-size: inherit; text-decoration: none; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--accent); }
+.button.ghost { color: var(--accent); background: transparent; }
 .offscreen { position: fixed; left: -9999px; top: 0; }
 #hh-status { margin: 0 0 8px; }
 #hh-status:empty { display: none; }
@@ -154,3 +154,13 @@ a.button.ghost { color: var(--accent); background: transparent; }
   .hh-row .hh-label { grid-column: 1 / -1; }
 }
 .hh-hint { flex-basis: 100%; margin: 0; }
+.mail-menu { position: relative; margin: 0; }
+.mail-menu summary { list-style: none; cursor: pointer; }
+.mail-menu summary::-webkit-details-marker { display: none; }
+.mail-menu-list { position: absolute; z-index: 4; top: calc(100% + 4px); left: 0; min-width: 280px; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 6px; box-shadow: 0 6px 24px rgba(0,0,0,.15); }
+.mail-menu-list a { padding: 8px 10px; border-radius: 6px; text-decoration: none; color: var(--text); }
+.mail-menu-list a:hover, .mail-menu-list a:focus { background: var(--chip); }
+.mail-menu-list .muted { margin: 6px 10px 4px; }
+.hh-edit { display: flex; flex-direction: column; margin: 8px 0 12px; }
+.hh-edit textarea { min-height: 260px; }
+@media (max-width: 600px) { .mail-menu-list { min-width: 0; width: calc(100vw - 64px); } }
