@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>Dashboard</title>
-  <link rel="stylesheet" href="style.css?v=20261103n">
+  <link rel="stylesheet" href="style.css?v=20261104a">
 </head>
 <body>
   <div id="loader" class="loader" role="status" aria-live="polite">
@@ -35,6 +35,7 @@
         <button class="tab active" data-tab="settings">Podešavanja</button>
         <button class="tab" data-tab="records">Prijave</button>
         <button class="tab" data-tab="archive">Arhiva</button>
+        <button class="tab" data-tab="headhunters">Headhunteri</button>
       </nav>
       <button id="logout" class="ghost">Odjavi se</button>
     </header>
@@ -151,7 +152,36 @@
         </div>
       </div>
     </section>
+
+    <section id="tab-headhunters" class="tab-panel hidden">
+      <div class="card">
+        <h2>Headhunteri</h2>
+        <p class="muted">Agencije kojima pišeš da ti nađu posao. Klikni <strong>✉️ Kreiraj mail</strong>, pa napiši Claude-u
+          „obradi headhuntere“: on prilagodi CV i napiše mejl, a ovde se pojave primalac, naslov i tekst sa dugmićima za kopiranje.</p>
+        <p id="hh-status" role="status"></p>
+        <div id="hh-list"></div>
+      </div>
+      <div class="card">
+        <h2>Dodaj agenciju</h2>
+        <form id="hh-form">
+          <div class="grid">
+            <label>Naziv agencije <input id="hh-firma" type="text" required></label>
+            <label>Kontakt osoba <input id="hh-kontakt" type="text" placeholder="npr. Marina Terzić"></label>
+            <label>Email <input id="hh-email" type="email" required></label>
+            <label>Sajt <input id="hh-sajt" type="url" placeholder="https://…"></label>
+            <label>Jezik mejla
+              <select id="hh-jezik"><option value="sr">srpski</option><option value="en">engleski</option></select>
+            </label>
+          </div>
+          <label>Napomena za Claude-a <textarea id="hh-napomena" rows="3"
+            placeholder="npr. preporuka od …, traže samo remote, šta da istaknem ili izostavim"></textarea></label>
+          <label>Fajl (opciono) – tvoj CV od kog da krene ili dokument koji je agencija poslala
+            <input id="hh-fajl" type="file" accept=".pdf,.doc,.docx,.txt,.html"></label>
+          <button type="submit">+ Dodaj</button>
+        </form>
+      </div>
+    </section>
   </div>
-  <script src="app.js?v=20261103n"></script>
+  <script src="app.js?v=20261104a"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@ const PATHS = {
   profile: "config/profile.json",
   languages: "config/languages.json",
   records: "data/applications.json",
+  headhunters: "data/headhunters.json",
 };
 const INTERVALS = [1, 2, 3, 4, 6, 8, 12, 24];
 const STORE = { token: "dash.token", repo: "dash.repo" };
@@ -17,7 +18,8 @@ const $ = (sel) => document.querySelector(sel);
 const state = { taxonomy: null, sources: null, config: null, sha: null, records: [], recordsSha: null, view: "records",
   sort: { key: "date", asc: false },
   companies: null, companiesSha: null, companiesDirty: false,
-  profile: null, profileSha: null, profileDirty: false, languages: null };
+  profile: null, profileSha: null, profileDirty: false, languages: null,
+  hh: { agencies: [] }, hhSha: null };
 // status → color group; groups in ARCHIVED move the record to the archive tab
 const STATUSES = [
   ["Čeka odobrenje", "wait"], ["Odobreno – čeka CV", "todo"], ["Odobreno – CV spreman", "todo"], ["Poslato", "sent"],
@@ -92,6 +94,7 @@ async function start() {
     await loadProfile();
     renderSettings();
     await loadRecords();
+    await loadHeadhunters();
     restoreView();
     $("#loader").classList.add("hidden");
     $("#app").classList.remove("hidden");  // shown once, complete, with a short fade
@@ -592,7 +595,7 @@ async function changed(path) {
   return !first;
 }
 function editing() {
-  return state.configDirty || state.profileDirty || state.companiesDirty;
+  return state.configDirty || state.profileDirty || state.companiesDirty || hhFormFilled();
 }
 async function refreshData() {
   if (document.visibilityState !== "visible") return;
@@ -600,7 +603,7 @@ async function refreshData() {
     if (await changed(`${WORKFLOW}/runs?per_page=6`)) { loadRuns(); loadLastFullScan(); }
     if (!(await changed("commits?per_page=1"))) return;
     // a status menu that is open must not be rebuilt under the cursor; it is picked up on the next round
-    if (!document.activeElement?.matches?.("select.status")) loadRecords();
+    if (!document.activeElement?.matches?.("select.status")) { loadRecords(); loadHeadhunters(); }
     const cfg = await readJson(PATHS.config);
     if (cfg.sha === state.sha) return;
     if (editing()) {
@@ -670,6 +673,178 @@ function startLiveUpdates() {
   setInterval(checkVersion, VERSION_MS);
   document.addEventListener("visibilitychange", () => { refreshData(); checkVersion(); });
 }
+
+// ---------- headhunters ----------
+// Agencies live in data/headhunters.json; "Kreiraj mail" marks one as waiting and Claude (on the Mac) writes the
+// tailored CV and email with `python -m jobhunter.headhunters ready`, which this tab then shows with copy buttons.
+const HH_WAITING = "Čeka Claude";
+const HH_STATUSES = ["Novo", HH_WAITING, "Spremno", "Poslato", "Odgovorili", "Intervju", "Bez odgovora", "Odbijeno"];
+const HH_GROUP = { Novo: "wait", [HH_WAITING]: "todo", Spremno: "todo", Poslato: "sent", Odgovorili: "review",
+  Intervju: "interview", "Bez odgovora": "closed", Odbijeno: "rejected" };
+function hhStatus(text, kind = "") {
+  const s = $("#hh-status");
+  s.textContent = text;
+  s.className = kind;
+}
+function hhFormFilled() {
+  return ["#hh-firma", "#hh-kontakt", "#hh-email", "#hh-sajt", "#hh-napomena", "#hh-fajl"].some((id) => $(id)?.value);
+}
+async function loadHeadhunters() {
+  try {
+    const res = await readJson(PATHS.headhunters);
+    state.hh = res.data; state.hhSha = res.sha;
+  } catch (e) {
+    if (e.status !== 404) return;  // keep what is shown; a missing file just means no agencies yet
+    state.hh = { agencies: [] }; state.hhSha = null;
+  }
+  // a mail text being selected or a status menu that is open must not be rebuilt under the cursor
+  if (!document.activeElement?.closest?.("#hh-list")) renderHeadhunters();
+}
+// writes the change; if something else saved meanwhile, takes that version and applies the change again
+async function hhSave(change, message) {
+  change(state.hh);
+  renderHeadhunters();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await api(PATHS.headhunters, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, content: textToB64(JSON.stringify(state.hh, null, 2) + "\n"),
+          ...(state.hhSha ? { sha: state.hhSha } : {}) }),
+      });
+      state.hhSha = (await res.json()).content.sha;
+      return true;
+    } catch (e) {
+      if ((e.status !== 409 && e.status !== 422) || attempt) {
+        hhStatus(e.status === 403 || e.status === 404
+          ? "Ključ nema dozvolu za upis (potrebno: Contents – Read and write)." : "Čuvanje nije uspelo. Pokušaj ponovo.", "err");
+        await loadHeadhunters();
+        return false;
+      }
+      const fresh = await readJson(PATHS.headhunters);
+      state.hh = fresh.data; state.hhSha = fresh.sha;
+      change(state.hh);
+      renderHeadhunters();
+    }
+  }
+  return false;
+}
+const hhFind = (reg, id) => reg.agencies.find((a) => a.id === id);
+async function copyText(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (_) {
+    const area = el("textarea", { class: "offscreen" });
+    area.value = text;
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+  const label = btn.textContent;
+  btn.textContent = "✅ Kopirano";
+  setTimeout(() => { btn.textContent = label; }, 1500);
+}
+function copyRow(label, text, multiline = false) {
+  const value = multiline ? el("pre", { class: "hh-body", text }) : el("span", { class: "hh-value", text });
+  const btn = el("button", { type: "button", class: "ghost copy", text: "📋 Copy" });
+  btn.addEventListener("click", () => copyText(text, btn));
+  return el("div", { class: `hh-row${multiline ? " multi" : ""}` }, [el("span", { class: "hh-label", text: label }), value, btn]);
+}
+function hhCard(a) {
+  const status = el("select", { class: "status", "data-group": HH_GROUP[a.status] || "", "aria-label": "Status" },
+    HH_STATUSES.map((n) => el("option", { value: n, text: n })));
+  status.value = a.status || "Novo";
+  status.addEventListener("change", () => hhSave((reg) => {
+    const x = hhFind(reg, a.id);
+    if (!x) return;
+    x.status = status.value;
+    if (status.value === "Poslato") x.poslato = new Date().toISOString().slice(0, 10);
+  }, `Headhunter ${a.firma}: ${status.value}`).then((ok) => ok && hhStatus(`✅ ${a.firma}: ${status.value}.`, "ok")));
+  const contact = [a.kontakt, a.email].filter(Boolean).join(" · ");
+  const site = a.sajt ? el("a", { href: a.sajt, target: "_blank", rel: "noopener noreferrer", text: "sajt" }) : null;
+  const head = el("div", { class: "row-between" }, [el("h3", { text: a.firma }), status]);
+  const meta = el("p", { class: "muted" }, [contact, ...(site ? [" · ", site] : []),
+    ` · ${a.jezik === "en" ? "engleski" : "srpski"}`]);
+  const parts = [head, meta];
+  if (a.napomena) parts.push(el("p", { class: "hh-note", text: a.napomena }));
+  const create = el("button", { type: "button", text: a.mail ? "↻ Napravi ponovo" : "✉️ Kreiraj mail" });
+  create.addEventListener("click", () => hhSave((reg) => {
+    const x = hhFind(reg, a.id);
+    if (x) { x.status = HH_WAITING; x.zatrazeno = new Date().toISOString(); }
+  }, `Headhunter ${a.firma}: zatražen CV i mejl`).then((ok) => ok &&
+    hhStatus(`✅ Zatraženo za ${a.firma}. Napiši Claude-u „obradi headhuntere“.`, "ok")));
+  const remove = el("button", { type: "button", class: "danger", text: "Ukloni" });
+  remove.addEventListener("click", () => {
+    if (!confirm(`Ukloniti ${a.firma} sa liste?`)) return;
+    hhSave((reg) => { reg.agencies = reg.agencies.filter((x) => x.id !== a.id); }, `Headhunter uklonjen: ${a.firma}`);
+  });
+  const actions = el("div", { class: "hh-actions" }, [create]);
+  if (a.prilog) actions.append(fileButton(a.prilog, "📎 Prilog"));
+  if (a.cv_fajl) actions.append(fileButton(a.cv_fajl, "📄 CV"));
+  actions.append(remove);
+  if (a.status === HH_WAITING) {
+    parts.push(el("p", { class: "hh-waiting", text: "⏳ Čeka da Claude napravi CV i mejl – napiši mu „obradi headhuntere“." }));
+  }
+  if (a.mail) {
+    const m = a.mail;
+    parts.push(el("div", { class: "hh-mail" }, [
+      copyRow("Za", m.to || a.email || ""), copyRow("Naslov", m.subject || ""), copyRow("Tekst", m.body || "", true),
+    ]));
+    const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(m.to || a.email || "")}` +
+      `&su=${encodeURIComponent(m.subject || "")}&body=${encodeURIComponent(m.body || "")}`;
+    actions.insertBefore(el("a", { class: "button ghost", href: gmail, target: "_blank", rel: "noopener noreferrer",
+      text: "📧 Otvori u Gmail-u" }), remove);
+  }
+  parts.push(actions);
+  return el("div", { class: "hh-card" }, parts);
+}
+function renderHeadhunters() {
+  const list = $("#hh-list");
+  const order = (a) => HH_STATUSES.indexOf(a.status);
+  const items = [...(state.hh.agencies || [])].sort((a, b) => order(a) - order(b) || String(a.firma).localeCompare(String(b.firma)));
+  list.replaceChildren(...items.map(hhCard));
+  if (!items.length) list.append(el("p", { class: "muted", text: "Još nema agencija – dodaj prvu ispod." }));
+}
+function safeName(name) {
+  return name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9.]+/g, "_").replace(/^_+|_+$/g, "") || "prilog";
+}
+function fileToB64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+$("#hh-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = ev.target;
+  const btn = form.querySelector("button[type=submit]");
+  const firma = $("#hh-firma").value.trim();
+  const id = `hh-${Date.now().toString(36)}`;
+  const file = $("#hh-fajl").files[0];
+  if (file && file.size > 10 * 1024 * 1024) return hhStatus("Fajl je veći od 10 MB.", "err");
+  btn.disabled = true;
+  hhStatus("Čuvam…");
+  let prilog = "";
+  try {
+    if (file) {
+      prilog = `data/headhunters/${id}/${safeName(file.name)}`;
+      await api(prilog, { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: `Headhunter ${firma}: prilog`, content: await fileToB64(file) }) });
+    }
+  } catch (e) {
+    btn.disabled = false;
+    return hhStatus("Otpremanje fajla nije uspelo. Pokušaj ponovo.", "err");
+  }
+  const agency = { id, firma, kontakt: $("#hh-kontakt").value.trim(), email: $("#hh-email").value.trim(),
+    sajt: $("#hh-sajt").value.trim(), jezik: $("#hh-jezik").value, napomena: $("#hh-napomena").value.trim(),
+    ...(prilog ? { prilog } : {}), status: "Novo", dodato: new Date().toISOString().slice(0, 10) };
+  const ok = await hhSave((reg) => { reg.agencies = reg.agencies || []; reg.agencies.push(agency); }, `Headhunter dodat: ${firma}`);
+  btn.disabled = false;
+  if (ok) { form.reset(); hhStatus(`✅ ${firma} je dodat. Klikni ✉️ Kreiraj mail kad budeš spreman.`, "ok"); }
+});
 
 // ---------- records table ----------
 async function loadRecords() {

@@ -125,3 +125,31 @@ td.note { min-width: 220px; }
 .spinner { width: 36px; height: 36px; border-radius: 50%; border: 3px solid var(--border); border-top-color: #d9534f; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
+textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; resize: vertical; }
+a.button { display: inline-block; text-decoration: none; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--accent); }
+a.button.ghost { color: var(--accent); background: transparent; }
+.offscreen { position: fixed; left: -9999px; top: 0; }
+#hh-status { margin: 0 0 8px; }
+#hh-status:empty { display: none; }
+#hh-status.ok { color: var(--ok); }
+#hh-status.err { color: var(--error); }
+.hh-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 12px; }
+.hh-card .muted { margin: 4px 0 8px; overflow-wrap: anywhere; }
+.hh-card a { color: var(--accent); }
+.hh-note { margin: 0 0 8px; font-size: .88rem; white-space: pre-line; }
+.hh-waiting { margin: 0 0 8px; color: #b26a00; font-size: .9rem; }
+@media (prefers-color-scheme: dark) { .hh-waiting { color: #ffb74d; } }
+.hh-mail { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+.hh-row { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; background: var(--chip); border-radius: 8px; }
+.hh-row.multi { align-items: start; }
+.hh-label { color: var(--muted); font-size: .85rem; }
+.hh-value { overflow-wrap: anywhere; }
+.hh-body { margin: 0; font: inherit; font-size: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow-y: auto; }
+.hh-row button.copy { font-size: .82rem; padding: 4px 10px; white-space: nowrap; }
+.hh-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#hh-form .grid { margin-bottom: 0; }
+@media (max-width: 600px) {
+  .hh-row { grid-template-columns: 1fr auto; }
+  .hh-row .hh-label { grid-column: 1 / -1; }
+}
