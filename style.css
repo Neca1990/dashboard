@@ -197,3 +197,6 @@ details.hh-section > summary { cursor: pointer; }
 .hh-about > summary { cursor: pointer; color: var(--accent); font-size: .9rem; }
 .hh-prep { margin: 4px 0 4px; }
 .hh-prep textarea { min-height: 64px; }
+.hh-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; position: sticky; top: 58px; z-index: 1; background: var(--card); padding: 6px 0; border-bottom: 1px solid var(--border); }
+.hh-tab { background: transparent; color: var(--text); border-color: var(--border); font-size: .9rem; padding: 6px 12px; }
+.hh-tab.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }

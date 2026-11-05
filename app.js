@@ -768,13 +768,25 @@ function copyRow(label, text, multiline = false) {
 }
 const FOLLOWUP_DAYS = 10;
 // [title, statuses, folded]
+// the tab's own sub-tabs: [title, statuses]
 const HH_SECTIONS = [
-  ["Predlozi", ["Predlog"], false],
-  ["U pripremi", HH_PREP, false],
-  ["Poslato", HH_SENT, false],
-  ["Završeno", HH_DONE, true],
-  ["Odbačeni", ["Odbačeno"], true],
+  ["Predlozi", ["Predlog"]],
+  ["U pripremi", HH_PREP],
+  ["Poslato", HH_SENT],
+  ["Odbijeno", [...HH_DONE, "Odbačeno"]],
 ];
+const sectionOf = (status) => (HH_SECTIONS.find(([, st]) => st.includes(status)) || HH_SECTIONS[1])[0];
+const HH_TAB_KEY = "dash.hhTab";
+function hhTab() {
+  if (!state.hhTab) { try { state.hhTab = sessionStorage.getItem(HH_TAB_KEY) || ""; } catch (_) { state.hhTab = ""; } }
+  return state.hhTab;
+}
+function setHhTab(title) {
+  state.hhTab = title;
+  try { sessionStorage.setItem(HH_TAB_KEY, title); } catch (_) { /* private mode */ }
+  renderHeadhunters();
+}
+const HH_MAIL_KIND = { licni: "👤 Lično regruteru", cv: "📥 Adresa za CV-e", opsti: "🏢 Opšta adresa firme", nema: "🚫 Nema mejla" };
 // local date, so an agency added after midnight is not dated the day before
 const today = () => new Date().toLocaleDateString("sv-SE");
 function daysSince(date) {
@@ -802,25 +814,32 @@ function hhSummary(a) {
       ...(HH_ADVICE[a.preporuka] ? [el("span", { class: `chip advice-${a.preporuka}`, text: HH_ADVICE[a.preporuka] })] : []),
     ]),
     ...[line("Šta rade", a.sta_rade), line("Za tebe", a.odgovara), line("Pouzdanost", a.pouzdanost),
-      line("Zašto", a.zasto), line("Prijava", HH_APPLY[a.nacin_prijave])].filter(Boolean),
+      line("Zašto", a.zasto), line("Prijava", HH_APPLY[a.nacin_prijave]), mailLine(a)].filter(Boolean),
     ...(sources.length ? [el("p", { class: "muted" }, ["Izvori: ", ...sources.flatMap((x, i) => (i ? [" · ", x] : [x])),
       ...(a.provereno ? [` · provereno ${sinceText(a.provereno)}`] : [])])] : []),
   ]);
+}
+// whom the email goes to: a recruiter, an inbox meant for CVs, or the firm's general address
+function mailLine(a) {
+  if (!a.email_tip) return null;
+  const where = a.email_izvor ? el("a", { href: a.email_izvor, target: "_blank", rel: "noopener noreferrer", text: "gde piše" }) : null;
+  return el("p", {}, [el("strong", { text: "Kome pišeš: " }), `${HH_MAIL_KIND[a.email_tip] || ""}${a.email ? ` (${a.email})` : ""}`,
+    ...(a.email_opis ? [` – ${a.email_opis}`] : []), ...(where ? [" · ", where] : [])]);
 }
 function suggestionActions(a) {
   const box = el("div", { class: "hh-actions" });
   if (a.status === "Predlog") {
     const yes = el("button", { type: "button", text: "➕ Hoću da im pišem" });
     yes.addEventListener("click", () => hhUpdate(a, (x) => { x.status = "Novo"; x.dodato = today(); }, `Headhunter ${a.firma}: izabran`,
-      `✅ ${a.firma} je u „U pripremi“. Okači CV (ako hoćeš), dodaj napomenu i klikni ${viaSite(a) ? "📄 Pripremi CV" : "✉️ Kreiraj mail"}.`));
+      `✅ ${a.firma} je premešten u „U pripremi“.`));
     const no = el("button", { type: "button", class: "ghost", text: "🚫 Ne zanima me" });
     no.addEventListener("click", () => hhUpdate(a, (x) => { x.status = "Odbačeno"; }, `Headhunter ${a.firma}: odbačen`,
-      `${a.firma} je premešten u Odbačene.`));
+      `${a.firma} je premešten u „Odbijeno“.`));
     box.append(yes, no);
   } else {
     const back = el("button", { type: "button", class: "ghost", text: "↩ Vrati u predloge" });
     back.addEventListener("click", () => hhUpdate(a, (x) => { x.status = "Predlog"; }, `Headhunter ${a.firma}: vraćen u predloge`,
-      `✅ ${a.firma} je vraćen u Predloge.`));
+      `✅ ${a.firma} je vraćen u „Predlozi“.`));
     box.append(back);
   }
   if (a.sajt) box.append(el("a", { class: "button ghost", href: a.sajt, target: "_blank", rel: "noopener noreferrer", text: "🌐 Sajt" }));
@@ -882,7 +901,8 @@ function hhCard(a) {
   status.addEventListener("change", () => hhUpdate(a, (x) => {
     x.status = status.value;
     if (status.value === "Poslato") x.poslato = x.poslato || today();
-  }, `Headhunter ${a.firma}: ${status.value}`, `✅ ${a.firma}: ${status.value}.`));
+  }, `Headhunter ${a.firma}: ${status.value}`, sectionOf(status.value) === hhTab() ? `✅ ${a.firma}: ${status.value}.`
+    : `✅ ${a.firma}: ${status.value} – premešten u „${sectionOf(status.value)}“.`));
   const contact = [a.kontakt, a.email].filter(Boolean).join(" · ");
   const site = a.sajt ? el("a", { href: a.sajt, target: "_blank", rel: "noopener noreferrer", text: "sajt" }) : null;
   const head = el("div", { class: "row-between" }, [el("h3", { text: a.firma }), status]);
@@ -1070,28 +1090,30 @@ function hhEditor(a, key) {
 function renderHeadhunters() {
   const list = $("#hh-list");
   const agencies = state.hh.agencies || [];
-  // in each section: what needs doing first, then the strongest suggestion / oldest sent, then by name
+  // in each sub-tab: what needs doing first, then the strongest suggestion / oldest sent, then by name
   const rank = (a) => (followupDue(a) ? 0 : a.followup_mail && !a.followup_poslato ? 1 : 2);
   const advice = (a) => ({ da: 0, mozda: 1, ne: 2 }[a.preporuka] ?? 1);
   const home = (a) => (a.tip === "platforma_remote" ? 1 : 0);  // Serbian agencies before the global platforms
   const order = (a, b) => rank(a) - rank(b) || advice(a) - advice(b) || home(a) - home(b) ||
     String(a.poslato || "~").localeCompare(String(b.poslato || "~")) || String(a.firma).localeCompare(String(b.firma));
-  state.hhOpen = state.hhOpen || {};
-  const sections = HH_SECTIONS.map(([title, statuses, folded]) => {
-    // an unknown status lands in "U pripremi" rather than disappearing
-    const items = agencies.filter((a) => statuses.includes(a.status) ||
-      (title === "U pripremi" && !HH_STATUSES.includes(a.status))).sort(order);
-    if (!items.length) return null;
-    const due = items.filter(followupDue).length;
-    const label = `${title} (${items.length})${due ? ` · ⏰ ${due} za follow-up` : ""}`;
-    if (!folded) return el("div", { class: "hh-section" }, [el("h3", { class: "hh-section-title", text: label }), ...items.map(hhCard)]);
-    const box = el("details", { class: "hh-section" }, [el("summary", { class: "hh-section-title", text: label }), ...items.map(hhCard)]);
-    box.open = !!state.hhOpen[title];
-    box.addEventListener("toggle", () => { state.hhOpen[title] = box.open; });
-    return box;
-  }).filter(Boolean);
-  list.replaceChildren(...sections);
-  if (!agencies.length) list.append(el("p", { class: "muted", text: "Još nema agencija – dodaj prvu ispod." }));
+  const groups = Object.fromEntries(HH_SECTIONS.map(([title]) => [title, []]));
+  agencies.forEach((a) => groups[sectionOf(a.status)].push(a));
+  // open on the remembered sub-tab, else the first one with something in it
+  let current = hhTab();
+  if (!groups[current]) current = (HH_SECTIONS.find(([t]) => groups[t].length) || HH_SECTIONS[0])[0];
+  state.hhTab = current;
+  const tabs = el("div", { class: "hh-tabs", role: "tablist" }, HH_SECTIONS.map(([title]) => {
+    const due = groups[title].filter(followupDue).length;
+    const btn = el("button", { type: "button", role: "tab", class: `hh-tab${title === current ? " active" : ""}`,
+      "aria-selected": String(title === current), text: `${title} (${groups[title].length})${due ? ` ⏰${due}` : ""}` });
+    btn.addEventListener("click", () => setHhTab(title));
+    return btn;
+  }));
+  const items = groups[current].sort(order);
+  const empty = { Predlozi: "Nema novih predloga – napiši Claude-u „nađi još agencija“.",
+    "U pripremi": "Ništa u pripremi – u Predlozima klikni ➕ Hoću da im pišem ili dodaj agenciju ispod.",
+    Poslato: "Još ništa nije poslato.", Odbijeno: "Nema odbijenih ni odbačenih agencija." }[current];
+  list.replaceChildren(tabs, ...(items.length ? items.map(hhCard) : [el("p", { class: "muted", text: empty })]));
 }
 function safeName(name) {
   return name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9.]+/g, "_").replace(/^_+|_+$/g, "") || "prilog";
@@ -1130,7 +1152,7 @@ $("#hh-form").addEventListener("submit", async (ev) => {
     ...(prilog ? { prilog } : {}), status: "Novo", dodato: today() };
   const ok = await hhSave((reg) => { reg.agencies = reg.agencies || []; reg.agencies.push(agency); }, `Headhunter dodat: ${firma}`);
   btn.disabled = false;
-  if (ok) { form.reset(); hhStatus(`✅ ${firma} je dodat. Klikni ✉️ Kreiraj mail kad budeš spreman.`, "ok"); }
+  if (ok) { form.reset(); setHhTab("U pripremi"); hhStatus(`✅ ${firma} je dodat u „U pripremi“.`, "ok"); }
 });
 
 // ---------- records table ----------
