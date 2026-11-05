@@ -689,9 +689,10 @@ const HH_GROUP = { Predlog: "review", Novo: "wait", [HH_WAITING]: "todo", Spremn
 const HH_TYPES = { it_agencija_rs: "🇷🇸 IT agencija", velika_agencija: "🏢 Velika agencija", platforma_remote: "🌍 Platforma (remote)" };
 const HH_ADVICE = { da: "✅ Preporuka: da", mozda: "🤔 Preporuka: možda", ne: "❌ Preporuka: ne" };
 const HH_APPLY = { email: "mejlom", forma: "preko forme na sajtu", email_i_forma: "mejlom ili preko forme na sajtu",
-  platforma: "registracijom na platformi (test i intervju), ne mejlom" };
+  platforma: "registracijom na platformi (test i intervju), ne mejlom", baza_kandidata: "upisom u njihovu bazu kandidata na sajtu",
+  samo_oglasi: "samo prijavom na njihove konkretne oglase" };
 // platforms take no email: Claude prepares only the CV for their signup
-const viaSite = (a) => a.nacin_prijave === "platforma" || (a.nacin_prijave === "forma" && !a.email);
+const viaSite = (a) => a.nacin_prijave === "platforma" || (["forma", "baza_kandidata", "samo_oglasi"].includes(a.nacin_prijave) && !a.email);
 // a confirmation fades after a few seconds so it never outlives what it talks about; errors stay
 let hhStatusTimer;
 function hhStatus(text, kind = "") {
@@ -814,7 +815,7 @@ function hhSummary(a) {
       ...(HH_ADVICE[a.preporuka] ? [el("span", { class: `chip advice-${a.preporuka}`, text: HH_ADVICE[a.preporuka] })] : []),
     ]),
     ...[line("Šta rade", a.sta_rade), line("Za tebe", a.odgovara), line("Pouzdanost", a.pouzdanost),
-      line("Zašto", a.zasto), line("Prijava", HH_APPLY[a.nacin_prijave]), mailLine(a)].filter(Boolean),
+      line("Zašto", a.zasto), line("Prijava", HH_APPLY[a.nacin_prijave]), mailLine(a), stepsLine(a)].filter(Boolean),
     ...(sources.length ? [el("p", { class: "muted" }, ["Izvori: ", ...sources.flatMap((x, i) => (i ? [" · ", x] : [x])),
       ...(a.provereno ? [` · provereno ${sinceText(a.provereno)}`] : [])])] : []),
   ]);
@@ -825,6 +826,13 @@ function mailLine(a) {
   const where = a.email_izvor ? el("a", { href: a.email_izvor, target: "_blank", rel: "noopener noreferrer", text: "gde piše" }) : null;
   return el("p", {}, [el("strong", { text: "Kome pišeš: " }), `${HH_MAIL_KIND[a.email_tip] || ""}${a.email ? ` (${a.email})` : ""}`,
     ...(a.email_opis ? [` – ${a.email_opis}`] : []), ...(where ? [" · ", where] : [])]);
+}
+// the agency's own instructions for candidates, as numbered steps
+function stepsLine(a) {
+  if (!(a.koraci || []).length) return null;
+  return el("div", { class: "hh-steps" }, [el("strong", { text: "Kako se prijavljuješ:" }),
+    el("ol", {}, a.koraci.map((k) => el("li", { text: k }))),
+    ...(a.prijava_napomena ? [el("p", { class: "muted", text: a.prijava_napomena })] : [])]);
 }
 function suggestionActions(a) {
   const box = el("div", { class: "hh-actions" });
